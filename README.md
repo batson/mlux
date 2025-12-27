@@ -1,6 +1,6 @@
 # mlux
 
-Model illumination. An interpretability library for MLX models. 
+Model illumination. An interpretability library for MLX models, so you can do small-model interpretability on your Apple laptops.
 
 Inspired by TransformerLens and Penzai.
 
