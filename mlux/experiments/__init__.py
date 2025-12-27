@@ -5,11 +5,13 @@ Available experiments:
 - induction_heads: Detect induction heads for in-context learning
 - binding_mechanisms: Analyze entity binding mechanisms (arXiv:2510.06182)
 - logit_lens: Interactive logit lens viewer (requires flask)
+- ablation: Mean ablation analysis of residual stream
 
 Usage:
     python -m mlux.experiments.induction_heads
     python -m mlux.experiments.binding_mechanisms
     python -m mlux.experiments.logit_lens
+    python -m mlux.experiments.ablation
 """
 
 from .induction_heads import (
@@ -30,6 +32,10 @@ from .binding_mechanisms import (
 
 from .logit_lens import LogitLens
 
+from .ablation import (
+    run_experiment as run_ablation_experiment,
+)
+
 __all__ = [
     # Induction heads
     "detect_induction_heads",
@@ -45,4 +51,6 @@ __all__ = [
     "PEOPLE_OBJECTS",
     # Logit lens
     "LogitLens",
+    # Ablation
+    "run_ablation_experiment",
 ]

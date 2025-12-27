@@ -82,7 +82,22 @@ An attempt to replicate [arXiv:2510.06182](https://arxiv.org/abs/2510.06182):
 ```bash
 python -m mlux.experiments.binding_mechanisms
 python -m mlux.experiments.binding_mechanisms --compare
+python -m mlux.experiments.binding_mechanisms --causal  # causal intervention analysis
 ```
+
+### Mean Ablation
+
+Ablate the residual stream at each (layer, position) and measure the effect on next-token prediction. Uses mean activations (averaged across positions in the prompt) as the ablation target.
+
+```bash
+python -m mlux.experiments.ablation --web  # Web interface with colored heatmap
+python -m mlux.experiments.ablation --prompt "John has a dog. Mary has a cat. What pet does John have?"
+```
+
+The web interface shows a blue-white-red heatmap where:
+- **Red** = ablating this position hurts the prediction
+- **Blue** = ablating this position helps the prediction (removes noise)
+- **White** = no effect
 
 ## Supported Models
 
