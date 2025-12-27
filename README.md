@@ -1,12 +1,12 @@
 # mlux
 
-Interpretability library for MLX models. Light inside the model.
+Model illumination. An interpretability library for MLX models. 
 
 Inspired by TransformerLens and Penzai.
 
 ## Features
 
-- **Zero logit diff**: Module wrapping preserves exact model outputs
+- **No rewrites**: Original model components are wrapped, so we don't need to rewrite the forward pass.
 - **Activation caching**: Cache any module's outputs during forward pass
 - **Interventions**: Ablate, patch, or modify activations with hooks
 - **Attention patterns**: Compute attention patterns from cached Q/K
@@ -15,12 +15,7 @@ Inspired by TransformerLens and Penzai.
 ## Installation
 
 ```bash
-pip install mlux
-```
-
-Or from source:
-```bash
-git clone https://github.com/jxnl/mlux
+git clone https://github.com/batson/mlux
 cd mlux
 pip install -e .
 ```
@@ -73,6 +68,8 @@ Opens a web UI where you can:
 
 ### Induction Heads
 
+Find induction heads in any model. (This was a sanity check for attention patterns to see if they matched the previous literature.)
+
 ```bash
 python -m mlux.experiments.induction_heads
 python -m mlux.experiments.induction_heads --model mlx-community/gpt2-base-mlx
@@ -80,7 +77,7 @@ python -m mlux.experiments.induction_heads --model mlx-community/gpt2-base-mlx
 
 ### Binding Mechanisms
 
-Replicate [arXiv:2510.06182](https://arxiv.org/abs/2510.06182):
+An attempt to replicate [arXiv:2510.06182](https://arxiv.org/abs/2510.06182):
 
 ```bash
 python -m mlux.experiments.binding_mechanisms
@@ -90,10 +87,6 @@ python -m mlux.experiments.binding_mechanisms --compare
 ## Supported Models
 
 Any mlx-lm compatible model: Gemma 2, Llama 3.x, Qwen 2.5, GPT-2, etc.
-
-## How It Works
-
-Unlike TransformerLens which rewrites the forward pass, mlux wraps modules in-place. This preserves perfect logit equivalence with the original model.
 
 ## License
 
