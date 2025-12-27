@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mlux"
+version = "0.2.0"
+description = "Interpretability library for MLX models - light inside the model"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+dependencies = [
+    "mlx>=0.5.0",
+    "mlx-lm>=0.10.0",
+    "numpy",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["mlux/tests"]
+
+[tool.setuptools.packages.find]
+where = ["."]
