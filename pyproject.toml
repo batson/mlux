@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0"]
+viewer = ["flask>=2.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["mlux/tests"]

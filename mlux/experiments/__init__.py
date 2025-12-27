@@ -4,10 +4,12 @@ Interpretability experiments for mlux.
 Available experiments:
 - induction_heads: Detect induction heads for in-context learning
 - binding_mechanisms: Analyze entity binding mechanisms (arXiv:2510.06182)
+- logit_lens: Interactive logit lens viewer (requires flask)
 
 Usage:
     python -m mlux.experiments.induction_heads
     python -m mlux.experiments.binding_mechanisms
+    python -m mlux.experiments.logit_lens
 """
 
 from .induction_heads import (
@@ -26,6 +28,8 @@ from .binding_mechanisms import (
     PEOPLE_OBJECTS,
 )
 
+from .logit_lens import LogitLens
+
 __all__ = [
     # Induction heads
     "detect_induction_heads",
@@ -39,4 +43,6 @@ __all__ = [
     "BindingTask",
     "FILLING_LIQUIDS",
     "PEOPLE_OBJECTS",
+    # Logit lens
+    "LogitLens",
 ]

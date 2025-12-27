@@ -55,6 +55,22 @@ patterns = hooked.get_attention_patterns("Hello world", layers=[0, 5, 10])
 
 ## Experiments
 
+### Logit Lens
+
+Interactive viewer showing what the model predicts at each layer. See how predictions evolve from garbage in early layers to the final answer.
+
+```bash
+pip install flask  # required for web UI
+python -m mlux.experiments.logit_lens
+python -m mlux.experiments.logit_lens --model mlx-community/Qwen2.5-7B-Instruct-4bit
+```
+
+Opens a web UI where you can:
+- Enter any prompt
+- See a grid of tokens (rows) × layers (columns)
+- View top predictions at each layer for each token position
+- Switch between residual stream, MLP output, and attention output probes
+
 ### Induction Heads
 
 ```bash
