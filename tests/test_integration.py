@@ -121,6 +121,70 @@ class TestPreHooks:
 
         assert baseline_pred != zeroed_pred, "Output should change when zeroing all late heads"
 
+    def test_pre_hook_equals_post_hook_patching(self, gemma_model):
+        """Patching all heads via pre-hook equals patching attention output via post-hook.
+
+        This validates that the two patching methods are consistent:
+        1. Capture o_proj input (pre) and self_attn output (post) from prompt A
+        2. Patch those into prompt B using the corresponding hook type
+        3. Both should produce identical logits
+        """
+        hooked = gemma_model
+        info = get_attention_info(hooked.model)
+        n_layers = info["n_layers"]
+
+        prompt_a = "The capital of France is"
+        prompt_b = "My favorite color is"
+
+        test_layer = n_layers // 2
+        o_proj_path = f"model.layers.{test_layer}.self_attn.o_proj"
+        attn_path = f"model.layers.{test_layer}.self_attn"
+
+        # Capture o_proj input from prompt A (concatenated head outputs before projection)
+        captured_a = {}
+
+        def capture_o_proj_input(args, kwargs, wrapper):
+            captured_a["o_proj_input"] = args[0][:, -1:, :]  # Last token only
+            return args, kwargs
+
+        hooked.run_with_hooks(prompt_a, pre_hooks=[(o_proj_path, capture_o_proj_input)])
+        mx.eval(captured_a["o_proj_input"])
+
+        # Capture self_attn output from prompt A (after o_proj)
+        def capture_attn_output(inputs, output, wrapper):
+            captured_a["attn_output"] = output[:, -1:, :]  # Last token only
+            return output
+
+        hooked.run_with_hooks(prompt_a, hooks=[(attn_path, capture_attn_output)])
+        mx.eval(captured_a["attn_output"])
+
+        # Method 1: Patch prompt B using pre-hook on o_proj (replace last token's input)
+        def patch_o_proj_input(args, kwargs, wrapper):
+            x = args[0]
+            patched = mx.concatenate([
+                x[:, :-1, :],
+                captured_a["o_proj_input"]
+            ], axis=1)
+            return (patched,), kwargs
+
+        out_pre = hooked.run_with_hooks(prompt_b, pre_hooks=[(o_proj_path, patch_o_proj_input)])
+        mx.eval(out_pre)
+
+        # Method 2: Patch prompt B using post-hook on self_attn (replace last token's output)
+        def patch_attn_output(inputs, output, wrapper):
+            patched = mx.concatenate([
+                output[:, :-1, :],
+                captured_a["attn_output"]
+            ], axis=1)
+            return patched
+
+        out_post = hooked.run_with_hooks(prompt_b, hooks=[(attn_path, patch_attn_output)])
+        mx.eval(out_post)
+
+        # Both methods should produce identical logits
+        diff = float(mx.max(mx.abs(out_pre - out_post)).item())
+        assert diff < 1e-4, f"Pre-hook and post-hook patching should match, got diff={diff}"
+
 
 # =============================================================================
 # Steering Validation Tests
