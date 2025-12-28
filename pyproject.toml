@@ -20,7 +20,10 @@ dev = ["pytest>=7.0"]
 viewer = ["flask>=2.0"]
 
 [tool.pytest.ini_options]
-testpaths = ["mlux/tests"]
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests as integration tests (loads real models, slower)",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
