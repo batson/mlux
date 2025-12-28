@@ -304,6 +304,7 @@ def create_app(model_name: str):
         </div>
         <div class="btn-group">
             <button class="btn btn-primary" onclick="computeVector()">Compute Vector</button>
+            <button class="btn btn-secondary" onclick="applyContrastiveChatFormat()">Chat Format</button>
             <span id="vector-info" class="info-bar"></span>
         </div>
     </div>
@@ -502,6 +503,36 @@ def create_app(model_name: str):
                 document.getElementById('test-prompt').value = data.formatted;
             }
         }
+
+        async function applyContrastiveChatFormat() {
+            const positive = document.getElementById('positive').value;
+            const negative = document.getElementById('negative').value;
+
+            const [posResp, negResp] = await Promise.all([
+                fetch('/format_chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt: positive})
+                }),
+                fetch('/format_chat', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt: negative})
+                })
+            ]);
+
+            const posData = await posResp.json();
+            const negData = await negResp.json();
+
+            if (posData.formatted) {
+                document.getElementById('positive').value = posData.formatted;
+            }
+            if (negData.formatted) {
+                document.getElementById('negative').value = negData.formatted;
+            }
+            vectorComputed = false;
+            document.getElementById('vector-info').textContent = '';
+        }
     </script>
 </body>
 </html>
@@ -536,23 +567,9 @@ def create_app(model_name: str):
         layer = data.get('layer', state["n_layers"] * 2 // 3)
 
         try:
-            # Format with chat template if available
-            tokenizer = state["hooked"].tokenizer
-            if hasattr(tokenizer, 'apply_chat_template'):
-                pos_formatted = tokenizer.apply_chat_template(
-                    [{'role': 'user', 'content': positive}],
-                    tokenize=False, add_generation_prompt=True
-                )
-                neg_formatted = tokenizer.apply_chat_template(
-                    [{'role': 'user', 'content': negative}],
-                    tokenize=False, add_generation_prompt=True
-                )
-            else:
-                pos_formatted = positive
-                neg_formatted = negative
-
+            # Use prompts as-is (user applies chat format explicitly via button)
             vector = compute_steering_vector(
-                state["hooked"], pos_formatted, neg_formatted, layer
+                state["hooked"], positive, negative, layer
             )
             norm = mx.sqrt(mx.sum(vector**2)).item()
 
@@ -575,18 +592,9 @@ def create_app(model_name: str):
             return jsonify({"error": "Compute vector first"})
 
         try:
-            # Format prompt
-            tokenizer = state["hooked"].tokenizer
-            if hasattr(tokenizer, 'apply_chat_template'):
-                formatted = tokenizer.apply_chat_template(
-                    [{'role': 'user', 'content': prompt}],
-                    tokenize=False, add_generation_prompt=True
-                )
-            else:
-                formatted = prompt
-
+            # Use prompt as-is (user applies chat format explicitly via button)
             text = generate_with_steering(
-                state["hooked"], formatted, state["steering_vector"], layer,
+                state["hooked"], prompt, state["steering_vector"], layer,
                 alpha=alpha, max_tokens=100, temperature=0.7
             )
             return jsonify({"text": text})
@@ -603,20 +611,11 @@ def create_app(model_name: str):
             return jsonify({"error": "Compute vector first"})
 
         try:
-            # Format prompt
-            tokenizer = state["hooked"].tokenizer
-            if hasattr(tokenizer, 'apply_chat_template'):
-                formatted = tokenizer.apply_chat_template(
-                    [{'role': 'user', 'content': prompt}],
-                    tokenize=False, add_generation_prompt=True
-                )
-            else:
-                formatted = prompt
-
+            # Use prompt as-is (user applies chat format explicitly via button)
             results = []
             for alpha in [-1.0, 0.0, 1.0]:
                 text = generate_with_steering(
-                    state["hooked"], formatted, state["steering_vector"], layer,
+                    state["hooked"], prompt, state["steering_vector"], layer,
                     alpha=alpha, max_tokens=80, temperature=0.7
                 )
                 results.append({"alpha": alpha, "text": text})
