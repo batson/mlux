@@ -6,7 +6,7 @@ Provides Penzai-style selection and transformation of pytree nodes.
 
 from typing import Any, Callable, Type, Iterator
 import mlx.nn as nn
-from .hook_wrapper import HookWrapper, HookFn
+from .hook_wrapper import HookWrapper, HookFn, PreHookFn
 
 
 def iter_modules(
@@ -87,6 +87,7 @@ def wrap_modules(
     model: nn.Module,
     predicate: Callable[[str, nn.Module], bool],
     hook_fn: HookFn = None,
+    pre_hook_fn: PreHookFn = None,
 ) -> dict[str, HookWrapper]:
     """
     Wrap matching modules with HookWrapper in-place.
@@ -94,7 +95,8 @@ def wrap_modules(
     Args:
         model: Model to modify (modified in-place!)
         predicate: Function(path, module) -> bool to select which modules to wrap
-        hook_fn: Optional hook function to attach to all wrappers
+        hook_fn: Optional post-hook function (called after module)
+        pre_hook_fn: Optional pre-hook function (called before module, can modify inputs)
 
     Returns:
         Dict mapping path -> HookWrapper for all wrapped modules
@@ -109,6 +111,16 @@ def wrap_modules(
         # Access captured values
         for name, wrapper in wrappers.items():
             print(f"{name}: {wrapper.last_output.shape}")
+
+    Example with pre-hook (patching attention head input):
+        def patch_head(args, kwargs, wrapper):
+            x = args[0]  # [batch, seq, n_heads * d_head]
+            x = x.at[:, :, :d_head].set(mean_activation)
+            return (x,) + args[1:], kwargs
+
+        wrappers = wrap_modules(model,
+            lambda p, m: p == "model.layers.5.self_attn.o_proj",
+            pre_hook_fn=patch_head)
     """
     wrappers = {}
 
@@ -120,7 +132,12 @@ def wrap_modules(
         if isinstance(module, HookWrapper):
             continue
 
-        wrapper = HookWrapper(wrapped=module, name=path, hook_fn=hook_fn)
+        wrapper = HookWrapper(
+            wrapped=module,
+            name=path,
+            hook_fn=hook_fn,
+            pre_hook_fn=pre_hook_fn
+        )
         _set_nested_attr(model, path, wrapper)
         wrappers[path] = wrapper
 

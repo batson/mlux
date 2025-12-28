@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional, Union
 import mlx.core as mx
 import mlx.nn as nn
 
-from .hook_wrapper import HookWrapper, HookFn
+from .hook_wrapper import HookWrapper, HookFn, PreHookFn
 from .utils import wrap_modules, unwrap_modules, find_modules, collect_activations, clear_all_caches
 
 
@@ -120,38 +120,65 @@ class HookedModel:
     def run_with_hooks(
         self,
         input: Union[str, mx.array],
-        hooks: list[tuple[str, HookFn]],
+        hooks: list[tuple[str, HookFn]] = None,
+        pre_hooks: list[tuple[str, PreHookFn]] = None,
+        cache: Optional[list] = None,
     ) -> mx.array:
         """
         Run forward pass with intervention hooks.
 
         Args:
             input: Token IDs or string
-            hooks: List of (module_path, hook_fn) tuples
+            hooks: List of (module_path, post_hook_fn) tuples - modify outputs
+            pre_hooks: List of (module_path, pre_hook_fn) tuples - modify inputs
+            cache: Optional KV cache for efficient generation (from mlx_lm.models.cache)
 
         Returns:
             Model output after interventions
+
+        Example (post-hook to double MLP output):
+            >>> def double_mlp(inputs, output, wrapper):
+            ...     return output * 2
+            >>> output = hooked.run_with_hooks(
+            ...     "Hello", hooks=[("model.layers.5.mlp", double_mlp)]
+            ... )
+
+        Example (pre-hook to patch attention head):
+            >>> def patch_head(args, kwargs, wrapper):
+            ...     x = args[0]  # [batch, seq, n_heads * d_head]
+            ...     x = x.at[:, :, :d_head].set(mean_activation)
+            ...     return (x,) + args[1:], kwargs
+            >>> output = hooked.run_with_hooks(
+            ...     "Hello", pre_hooks=[("model.layers.5.self_attn.o_proj", patch_head)]
+            ... )
         """
         tokens = self._tokenize(input)
+        hooks = hooks or []
+        pre_hooks = pre_hooks or []
 
-        # Create path -> hook_fn mapping
+        # Create path -> hook_fn mappings
         hook_map = dict(hooks)
-        paths = set(hook_map.keys())
+        pre_hook_map = dict(pre_hooks)
+        all_paths = set(hook_map.keys()) | set(pre_hook_map.keys())
 
         # Wrap with specific hooks
-        for path in paths:
+        for path in all_paths:
             def make_predicate(p):
                 return lambda path, m: path == p
 
             wrappers = wrap_modules(
                 self.model,
                 make_predicate(path),
-                hook_fn=hook_map[path]
+                hook_fn=hook_map.get(path),
+                pre_hook_fn=pre_hook_map.get(path)
             )
             self._wrappers.update(wrappers)
 
         try:
-            output = self.model(tokens)
+            if cache is not None:
+                output = self.model(tokens, cache=cache)
+            else:
+                output = self.model(tokens)
             mx.eval(output)
             return output
         finally:
