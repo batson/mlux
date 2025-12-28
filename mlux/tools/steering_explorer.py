@@ -24,6 +24,8 @@ from mlux.steering import (
     generate_with_steering,
     prefill_with_cache,
     generate_from_cache,
+    generate_from_cache_stream,
+    create_steering_hook,
     ContrastiveSteering,
 )
 
@@ -436,24 +438,45 @@ def create_app(model_name: str):
             const alpha = parseFloat(document.getElementById('alpha').value);
             const maxTokens = parseInt(document.getElementById('max-tokens').value);
 
+            const cls = alpha > 0 ? 'output-positive' : alpha < 0 ? 'output-negative' : 'output-neutral';
             document.getElementById('output-section').style.display = 'block';
-            document.getElementById('outputs').innerHTML = '<div class="loading">generating...</div>';
+            document.getElementById('outputs').innerHTML = `
+                <div class="output-label">alpha = ${alpha}</div>
+                <div class="output-box ${cls}" id="stream-output"></div>
+            `;
 
-            const resp = await fetch('/generate', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt, layer, alpha, max_tokens: maxTokens})
-            });
-            const data = await resp.json();
+            try {
+                const resp = await fetch('/generate_stream', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt, layer, alpha, max_tokens: maxTokens})
+                });
 
-            if (data.error) {
-                document.getElementById('outputs').innerHTML = `<div class="output-box">Error: ${data.error}</div>`;
-            } else {
-                const cls = alpha > 0 ? 'output-positive' : alpha < 0 ? 'output-negative' : 'output-neutral';
-                document.getElementById('outputs').innerHTML = `
-                    <div class="output-label">alpha = ${alpha}</div>
-                    <div class="output-box ${cls}">${escapeHtml(data.text)}</div>
-                `;
+                const reader = resp.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const {done, value} = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, {stream: true});
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop();
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.token) {
+                                document.getElementById('stream-output').textContent += data.token;
+                            } else if (data.error) {
+                                document.getElementById('stream-output').textContent = 'Error: ' + data.error;
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                document.getElementById('stream-output').textContent = 'Error: ' + e.message;
             }
         }
 
@@ -632,6 +655,41 @@ def create_app(model_name: str):
             return jsonify({"results": results})
         except Exception as e:
             return jsonify({"error": str(e)})
+
+    @app.route('/generate_stream', methods=['POST'])
+    def generate_stream():
+        from flask import Response
+
+        data = request.json
+        prompt = data.get('prompt', '')
+        layer = data.get('layer', state.get("current_layer", 10))
+        alpha = data.get('alpha', 0.5)
+        max_tokens = data.get('max_tokens', 100)
+
+        if state["steering_vector"] is None:
+            return jsonify({"error": "Compute vector first"})
+
+        def stream():
+            try:
+                # Build hooks
+                hook_path = f"model.layers.{layer}"
+                hook = create_steering_hook(state["steering_vector"], alpha)
+                hooks = [(hook_path, hook)]
+
+                # Prefill
+                cache, logits = prefill_with_cache(state["hooked"], prompt, hooks=hooks)
+
+                # Stream tokens
+                for token in generate_from_cache_stream(
+                    state["hooked"], cache, max_tokens, 0.7, hooks=hooks, initial_logits=logits
+                ):
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+
+                yield f"data: {json.dumps({'done': True})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return Response(stream(), mimetype='text/event-stream')
 
     @app.route('/format_chat', methods=['POST'])
     def format_chat():

@@ -155,20 +155,47 @@ def generate_from_cache(
     Returns:
         Generated text
     """
+    tokens = list(generate_from_cache_stream(
+        hooked, cache, max_tokens, temperature, hooks, initial_logits
+    ))
+    return "".join(tokens)
+
+
+def generate_from_cache_stream(
+    hooked: HookedModel,
+    cache: list,
+    max_tokens: int = 100,
+    temperature: float = 0.0,
+    hooks: list[tuple[str, HookFn]] = None,
+    initial_logits: mx.array = None,
+):
+    """
+    Generate tokens continuing from a prefilled cache, yielding each token.
+
+    Args:
+        hooked: HookedModel instance
+        cache: KV cache from prefill_with_cache
+        max_tokens: Maximum tokens to generate
+        temperature: Sampling temperature (0 = greedy)
+        hooks: Optional hooks to apply during generation
+        initial_logits: Logits from prefill (required for first token)
+
+    Yields:
+        Token strings as they are generated
+    """
     if initial_logits is None:
         raise ValueError("initial_logits required - use prefill_with_cache which returns (cache, logits)")
 
     eos_tokens = _get_eos_tokens(hooked.tokenizer)
-    generated = []
 
     # Sample first token from prefill logits
     y = _sample_token(initial_logits[:, -1, :], temperature)
     mx.eval(y)
 
     if y.item() in eos_tokens:
-        return ""
+        return
 
-    generated.append(y.item())
+    yield hooked.tokenizer.decode([y.item()])
 
     # Continue generation
     for _ in range(max_tokens - 1):
@@ -183,9 +210,7 @@ def generate_from_cache(
 
         if y.item() in eos_tokens:
             break
-        generated.append(y.item())
-
-    return hooked.tokenizer.decode(generated)
+        yield hooked.tokenizer.decode([y.item()])
 
 
 def generate_with_steering(
