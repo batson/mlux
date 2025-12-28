@@ -6,9 +6,9 @@ Visualize what tokens a model predicts at each layer by projecting
 intermediate activations through the unembedding matrix.
 
 Usage:
-    python -m mlux.experiments.logit_lens
-    python -m mlux.experiments.logit_lens --model mlx-community/Llama-3.2-1B-Instruct-4bit
-    python -m mlux.experiments.logit_lens --port 5001
+    python -m mlux.tools.logit_lens
+    python -m mlux.tools.logit_lens --model mlx-community/Llama-3.2-1B-Instruct-4bit
+    python -m mlux.tools.logit_lens --port 5001
 """
 
 import argparse
