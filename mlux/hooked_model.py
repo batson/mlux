@@ -5,11 +5,52 @@ Uses the module wrapping approach for perfect logit equivalence.
 """
 
 from typing import Any, Callable, Optional, Union
+import warnings
 import mlx.core as mx
 import mlx.nn as nn
 
 from .hook_wrapper import HookWrapper, HookFn, PreHookFn
 from .utils import wrap_modules, unwrap_modules, find_modules, collect_activations, clear_all_caches
+
+
+def _detect_quantization_bits(model: nn.Module) -> Optional[int]:
+    """
+    Detect quantization bits from model weights.
+
+    Returns:
+        Number of bits (e.g., 4, 8) if quantized, None if full precision.
+    """
+    try:
+        # Navigate to a layer's linear module
+        if hasattr(model, 'model') and hasattr(model.model, 'layers'):
+            layers = model.model.layers
+        elif hasattr(model, 'layers'):
+            layers = model.layers
+        else:
+            return None
+
+        if len(layers) == 0:
+            return None
+
+        layer = layers[0]
+
+        # Check MLP or attention for quantized linear
+        for submodule in [layer.mlp, layer.self_attn] if hasattr(layer, 'mlp') else [layer]:
+            if submodule is None:
+                continue
+            for name, mod in submodule.items() if hasattr(submodule, 'items') else []:
+                if hasattr(mod, 'bits'):
+                    return mod.bits
+
+        # Alternative: check if any module is QuantizedLinear
+        for name, mod in layer.items() if hasattr(layer, 'items') else []:
+            if 'Quantized' in type(mod).__name__ and hasattr(mod, 'bits'):
+                return mod.bits
+
+    except Exception:
+        pass
+
+    return None
 
 
 class HookedModel:
@@ -156,7 +197,28 @@ class HookedModel:
         hooks = hooks or []
         pre_hooks = pre_hooks or []
 
-        # Create path -> hook_fn mappings
+        # Check for duplicate paths and warn
+        hook_paths = [path for path, _ in hooks]
+        pre_hook_paths = [path for path, _ in pre_hooks]
+
+        for paths, hook_type in [(hook_paths, "hooks"), (pre_hook_paths, "pre_hooks")]:
+            seen = set()
+            duplicates = []
+            for path in paths:
+                if path in seen:
+                    duplicates.append(path)
+                seen.add(path)
+
+            if duplicates:
+                warnings.warn(
+                    f"Duplicate paths in {hook_type}: {duplicates}. "
+                    f"Only the last hook for each path will run. "
+                    f"To apply multiple operations, combine them into a single hook function.",
+                    UserWarning,
+                    stacklevel=2
+                )
+
+        # Create path -> hook_fn mappings (later hooks overwrite earlier ones)
         hook_map = dict(hooks)
         pre_hook_map = dict(pre_hooks)
         all_paths = set(hook_map.keys()) | set(pre_hook_map.keys())
@@ -202,6 +264,37 @@ class HookedModel:
         """
         from .attention import get_attention_info
         return get_attention_info(self.model)
+
+    @property
+    def quantization_bits(self) -> Optional[int]:
+        """
+        Get quantization bits if model is quantized.
+
+        Returns:
+            Number of bits (4, 8, etc.) if quantized, None if full precision.
+        """
+        return _detect_quantization_bits(self.model)
+
+    def get_tolerance(self, strict: float = 1e-5, relaxed: float = 0.15) -> float:
+        """
+        Get appropriate numerical tolerance based on model quantization.
+
+        Args:
+            strict: Tolerance for full-precision models
+            relaxed: Tolerance for quantized models
+
+        Returns:
+            Appropriate tolerance value
+        """
+        bits = self.quantization_bits
+        if bits is None:
+            return strict
+        elif bits <= 4:
+            return relaxed
+        elif bits <= 8:
+            return relaxed / 2  # 8-bit is more precise than 4-bit
+        else:
+            return strict
 
     def get_attention_patterns(
         self,
