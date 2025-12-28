@@ -326,11 +326,12 @@ def create_app(model_name: str):
         <div class="section-title">Generation</div>
         <div class="input-group">
             <label class="input-label">Test prompt</label>
-            <input type="text" id="test-prompt" value="Describe a movie you recently watched." onkeydown="if(event.key==='Enter')generate()">
+            <textarea id="test-prompt" rows="3" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();generate()}">Describe a movie you recently watched.</textarea>
         </div>
         <div class="btn-group">
             <button class="btn btn-primary" onclick="generate()">Generate</button>
             <button class="btn btn-secondary" onclick="generateAll()">Compare All</button>
+            <button class="btn btn-secondary" onclick="applyChatFormat()">Chat Format</button>
         </div>
     </div>
 
@@ -488,6 +489,19 @@ def create_app(model_name: str):
         function escapeHtml(text) {
             return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
+
+        async function applyChatFormat() {
+            const prompt = document.getElementById('test-prompt').value;
+            const resp = await fetch('/format_chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({prompt})
+            });
+            const data = await resp.json();
+            if (data.formatted) {
+                document.getElementById('test-prompt').value = data.formatted;
+            }
+        }
     </script>
 </body>
 </html>
@@ -608,6 +622,24 @@ def create_app(model_name: str):
                 results.append({"alpha": alpha, "text": text})
 
             return jsonify({"results": results})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+
+    @app.route('/format_chat', methods=['POST'])
+    def format_chat():
+        data = request.json
+        prompt = data.get('prompt', '')
+
+        try:
+            tokenizer = state["hooked"].tokenizer
+            if hasattr(tokenizer, 'apply_chat_template'):
+                formatted = tokenizer.apply_chat_template(
+                    [{'role': 'user', 'content': prompt}],
+                    tokenize=False, add_generation_prompt=True
+                )
+                return jsonify({"formatted": formatted})
+            else:
+                return jsonify({"formatted": prompt, "note": "No chat template available"})
         except Exception as e:
             return jsonify({"error": str(e)})
 
