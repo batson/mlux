@@ -37,7 +37,7 @@ Supported Models:
 __version__ = "0.2.0"
 
 from .hooked_model import HookedModel
-from .hook_wrapper import HookWrapper, HookFn
+from .hook_wrapper import HookWrapper, HookFn, PreHookFn
 from .attention import (
     compute_attention_patterns,
     get_attention_info,
@@ -49,6 +49,16 @@ from .utils import (
     find_modules,
     collect_activations,
 )
+from .steering import (
+    ContrastiveSteering,
+    compute_steering_vector,
+    create_steering_hook,
+    create_additive_hook,
+    prefill_with_cache,
+    generate_from_cache,
+    generate_with_steering,
+    suggest_alpha,
+)
 
 __all__ = [
     # Version
@@ -58,10 +68,20 @@ __all__ = [
     # Hook system
     "HookWrapper",
     "HookFn",
+    "PreHookFn",
     # Attention
     "compute_attention_patterns",
     "get_attention_info",
     "AttentionPatternHelper",
+    # Steering
+    "ContrastiveSteering",
+    "compute_steering_vector",
+    "create_steering_hook",
+    "create_additive_hook",
+    "prefill_with_cache",
+    "generate_from_cache",
+    "generate_with_steering",
+    "suggest_alpha",
     # Utilities
     "wrap_modules",
     "unwrap_modules",
