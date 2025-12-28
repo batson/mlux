@@ -329,6 +329,11 @@ def create_app(model_name: str):
             <label class="input-label">Test prompt</label>
             <textarea id="test-prompt" rows="3" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();generate()}">Describe a movie you recently watched.</textarea>
         </div>
+        <div class="slider-group">
+            <span class="slider-label">Max tokens</span>
+            <input type="range" id="max-tokens" min="10" max="500" step="10" value="100" oninput="document.getElementById('max-tokens-value').textContent=this.value">
+            <span class="slider-value" id="max-tokens-value">100</span>
+        </div>
         <div class="btn-group">
             <button class="btn btn-primary" onclick="generate()">Generate</button>
             <button class="btn btn-secondary" onclick="generateAll()">Compare All</button>
@@ -429,6 +434,7 @@ def create_app(model_name: str):
             const prompt = document.getElementById('test-prompt').value;
             const layer = parseInt(document.getElementById('layer').value);
             const alpha = parseFloat(document.getElementById('alpha').value);
+            const maxTokens = parseInt(document.getElementById('max-tokens').value);
 
             document.getElementById('output-section').style.display = 'block';
             document.getElementById('outputs').innerHTML = '<div class="loading">generating...</div>';
@@ -436,7 +442,7 @@ def create_app(model_name: str):
             const resp = await fetch('/generate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt, layer, alpha})
+                body: JSON.stringify({prompt, layer, alpha, max_tokens: maxTokens})
             });
             const data = await resp.json();
 
@@ -458,6 +464,7 @@ def create_app(model_name: str):
 
             const prompt = document.getElementById('test-prompt').value;
             const layer = parseInt(document.getElementById('layer').value);
+            const maxTokens = parseInt(document.getElementById('max-tokens').value);
 
             document.getElementById('output-section').style.display = 'block';
             document.getElementById('outputs').innerHTML = '<div class="loading">generating comparison...</div>';
@@ -465,7 +472,7 @@ def create_app(model_name: str):
             const resp = await fetch('/generate_comparison', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt, layer})
+                body: JSON.stringify({prompt, layer, max_tokens: maxTokens})
             });
             const data = await resp.json();
 
@@ -587,6 +594,7 @@ def create_app(model_name: str):
         prompt = data.get('prompt', '')
         layer = data.get('layer', state.get("current_layer", 10))
         alpha = data.get('alpha', 0.5)
+        max_tokens = data.get('max_tokens', 100)
 
         if state["steering_vector"] is None:
             return jsonify({"error": "Compute vector first"})
@@ -595,7 +603,7 @@ def create_app(model_name: str):
             # Use prompt as-is (user applies chat format explicitly via button)
             text = generate_with_steering(
                 state["hooked"], prompt, state["steering_vector"], layer,
-                alpha=alpha, max_tokens=100, temperature=0.7
+                alpha=alpha, max_tokens=max_tokens, temperature=0.7
             )
             return jsonify({"text": text})
         except Exception as e:
@@ -606,6 +614,7 @@ def create_app(model_name: str):
         data = request.json
         prompt = data.get('prompt', '')
         layer = data.get('layer', state.get("current_layer", 10))
+        max_tokens = data.get('max_tokens', 100)
 
         if state["steering_vector"] is None:
             return jsonify({"error": "Compute vector first"})
@@ -616,7 +625,7 @@ def create_app(model_name: str):
             for alpha in [-1.0, 0.0, 1.0]:
                 text = generate_with_steering(
                     state["hooked"], prompt, state["steering_vector"], layer,
-                    alpha=alpha, max_tokens=80, temperature=0.7
+                    alpha=alpha, max_tokens=max_tokens, temperature=0.7
                 )
                 results.append({"alpha": alpha, "text": text})
 
