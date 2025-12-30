@@ -89,7 +89,7 @@ def get_attention_info(model) -> dict:
             info["n_heads"] = args.num_attention_heads
         if hasattr(args, "num_key_value_heads"):
             info["n_kv_heads"] = args.num_key_value_heads
-        if hasattr(args, "head_dim"):
+        if hasattr(args, "head_dim") and args.head_dim is not None:
             info["d_head"] = args.head_dim
         elif hasattr(args, "hidden_size") and info["n_heads"]:
             info["d_head"] = args.hidden_size // info["n_heads"]

@@ -89,6 +89,55 @@ class HookedModel:
         self.tokenizer = tokenizer
         self._wrappers: dict[str, HookWrapper] = {}
 
+    def __repr__(self) -> str:
+        # Get model type/family
+        model_type = getattr(self.model, 'model_type', None)
+        if model_type is None:
+            model_type = type(self.model).__name__
+
+        # Get config info
+        try:
+            cfg = self.config
+            arch = f"{cfg['n_layers']}L/{cfg['n_heads']}H/{cfg['d_head']}D"
+        except Exception:
+            arch = "?"
+
+        # Quantization and dtype
+        bits = self.quantization_bits
+        dtype = self._detect_dtype()
+        if bits:
+            precision = f"{bits}bit/{dtype}"
+        else:
+            precision = dtype
+
+        return f"HookedModel({model_type}, {arch}, {precision})"
+
+    def _detect_dtype(self) -> str:
+        """Detect dtype from first linear layer's weight or scales."""
+        try:
+            for child in self._iter_modules(self.model):
+                # QuantizedLinear has scales, regular Linear has weight
+                if hasattr(child, 'scales'):
+                    return str(child.scales.dtype).replace('mlx.core.', '')
+                if isinstance(child, nn.Linear):
+                    return str(child.weight.dtype).replace('mlx.core.', '')
+        except Exception:
+            pass
+        return "?"
+
+    def _iter_modules(self, module):
+        """Iterate over all child modules, handling lists."""
+        for name, child in module.children().items():
+            if isinstance(child, list):
+                for item in child:
+                    yield item
+                    if hasattr(item, 'children'):
+                        yield from self._iter_modules(item)
+            else:
+                yield child
+                if hasattr(child, 'children'):
+                    yield from self._iter_modules(child)
+
     @classmethod
     def from_pretrained(cls, model_name: str, **kwargs) -> "HookedModel":
         """Load a pretrained model."""

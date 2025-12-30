@@ -48,6 +48,8 @@ from .utils import (
     unwrap_modules,
     find_modules,
     collect_activations,
+    list_local_models,
+    get_cached_models,
 )
 from .steering import (
     ContrastiveSteering,
@@ -87,4 +89,6 @@ __all__ = [
     "unwrap_modules",
     "find_modules",
     "collect_activations",
+    "list_local_models",
+    "get_cached_models",
 ]

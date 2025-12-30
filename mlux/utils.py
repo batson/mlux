@@ -178,3 +178,40 @@ def clear_all_caches(wrappers: dict[str, HookWrapper]) -> None:
     """Clear captured values from all wrappers."""
     for wrapper in wrappers.values():
         wrapper.clear_cache()
+
+
+def list_local_models() -> list[str]:
+    """
+    List locally cached HuggingFace models.
+
+    Returns:
+        List of model repo IDs (e.g., "mlx-community/gemma-2-2b-it-4bit")
+    """
+    try:
+        from huggingface_hub import scan_cache_dir
+        cache = scan_cache_dir()
+        return sorted([repo.repo_id for repo in cache.repos])
+    except ImportError:
+        raise ImportError("huggingface_hub required. Install with: pip install huggingface-hub")
+    except Exception:
+        return []
+
+
+def get_cached_models() -> list[str]:
+    """
+    Get list of mlx-community models in HF cache.
+
+    Returns:
+        List of mlx-community model IDs (e.g., "mlx-community/gemma-2-2b-it-4bit")
+    """
+    import os
+    cache_dir = os.path.expanduser("~/.cache/huggingface/hub/")
+    models = []
+    try:
+        for name in os.listdir(cache_dir):
+            if name.startswith("models--mlx-community--"):
+                model_id = name.replace("models--", "").replace("--", "/")
+                models.append(model_id)
+    except FileNotFoundError:
+        pass
+    return sorted(models)
