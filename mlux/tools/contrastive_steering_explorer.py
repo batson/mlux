@@ -318,7 +318,10 @@ def create_app(model_name: str):
         <div class="section-title">Generation</div>
         <div class="input-group">
             <label class="input-label">Test prompt</label>
-            <textarea id="test-prompt" rows="3" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();generate()}">Describe a movie you recently watched.</textarea>
+            <textarea id="test-prompt" rows="3" onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault();generate()}"><bos><start_of_turn>user
+Describe a movie you recently watched.<end_of_turn>
+<start_of_turn>model
+</textarea>
         </div>
         <div class="slider-group">
             <span class="slider-label">Max tokens</span>
