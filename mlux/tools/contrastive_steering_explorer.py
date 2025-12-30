@@ -25,10 +25,8 @@ from mlux.steering import (
     compute_steering_vector,
     generate_with_steering,
     prefill_with_cache,
-    generate_from_cache,
     generate_from_cache_stream,
     create_steering_hook,
-    ContrastiveSteering,
 )
 from mlux.utils import get_cached_models
 

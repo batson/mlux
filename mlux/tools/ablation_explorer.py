@@ -21,6 +21,7 @@ import mlx.core as mx
 import numpy as np
 
 from mlux import HookedModel
+from mlux.utils import get_cached_models
 
 
 def compute_mean_activations(
@@ -617,19 +618,6 @@ HTML_TEMPLATE = """
 """
 
 
-def get_cached_models() -> list:
-    """Get list of mlx-community models in the HuggingFace cache."""
-    import os
-    cache_dir = os.path.expanduser("~/.cache/huggingface/hub")
-    models = []
-    if os.path.exists(cache_dir):
-        for name in os.listdir(cache_dir):
-            if name.startswith("models--mlx-community--"):
-                model_name = name.replace("models--", "").replace("--", "/")
-                models.append(model_name)
-    return sorted(models)
-
-
 def create_app(model_name: str):
     """Create Flask app for ablation viewer."""
     from flask import Flask, request, jsonify, Response, render_template_string
@@ -688,7 +676,7 @@ def create_app(model_name: str):
                     messages, tokenize=False, add_generation_prompt=True
                 )
                 return jsonify({"formatted": formatted})
-        except:
+        except Exception:
             pass
         return jsonify({"formatted": None})
 
@@ -792,8 +780,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port",
         type=int,
-        default=5002,
-        help="Port for web interface (default: 5002)",
+        default=5005,
+        help="Port for web interface (default: 5005)",
     )
     args = parser.parse_args()
 

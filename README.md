@@ -9,7 +9,7 @@ I include three vignettes showing the power of these simple approaches below:
 
 * Logit Lens: see some intermediate states of the model's computation. For example, the model is "thinking" in English even when speaking in French.
 * Activation Patching: see how the model's output changes when an internal state from one prompt is patched into another. For example, we might see that in a story, early layers represent someone by their name, while middle layers by their index in the story ("Second Character Mentioned").
-* Contrastive steering: see how a model's output changes when influenced by the essense extracted from a pair of contrasting different prompts. For example, you can shift the mood, verbosity, hange how models talk using the essense extracted from a different prompt
+* Contrastive steering: see how a model's output changes when influenced by the essence extracted from a pair of contrasting prompts. For example, you can shift the mood, verbosity, or formality of model outputs using a steering vector extracted from contrastive examples
 
 There are interactive web interfaces for each, launchable from the command line. Finally, there's a bonus widget for interacting with base models (not instruction tuned, no assistant, just a raw simulator of text), which is definitely worth doing if you've never played with a base model before.
 
@@ -94,11 +94,11 @@ To launch an interactive tool for exploring activation patching in your browser,
 
 ## Vignette 3: Contrastive Steering
 
-Representations from one prompt can be used to steer the model's generations on another. A shockingly effective method to generate a "steering vector" -- used to push the model in some direction -- is to take a contrasting pair of prompts that differ in exactly the essense you want to capture and then take the difference in the representations at the final token ([Subramani et al.](https://arxiv.org/abs/2205.05124), [Turner et al.](https://arxiv.org/abs/2308.10248)). Injecting this into a new prompt while the model samples from it is a recipe for amusement, and sometimes utility.
+Representations from one prompt can be used to steer the model's generations on another. A shockingly effective method to generate a "steering vector" -- used to push the model in some direction -- is to take a contrasting pair of prompts that differ in exactly the essence you want to capture and then take the difference in the representations at the final token ([Subramani et al.](https://arxiv.org/abs/2205.05124), [Turner et al.](https://arxiv.org/abs/2308.10248)). Injecting this into a new prompt while the model samples from it is a recipe for amusement, and sometimes utility.
 
 For example, the difference between "I absolutely love this! It's amazing and wonderful!" and "I absolutely hate this! It's terrible and awful!" can be used to tune the sentiment of a generation from enthusiastic to disparaging. The difference between "hey can u help me out with something real quick" and "I am writing to formally request your assistance with the following matter." tunes formality. More importantly, the difference between "I'd be happy to help you with that! Here's how:" and "I cannot and will not assist with that request because it could be harmful." can be used to bypass refusals.
 
-Steering with contrastive pairs is a bit finicky; too low of a multiple of the steering vector has no effect, and too high of a multiple generates gibberish. The exact scaling parameter (`alpha`) will depend on the contrastive pair and on the so if you play around, try tweaking the `alpha` parameter.
+Steering with contrastive pairs is a bit finicky; too low of a multiple of the steering vector has no effect, and too high of a multiple generates gibberish. The exact scaling parameter (`alpha`) depends on the contrastive pair and model, so if you play around, try tweaking the `alpha` slider.
 
 Consider two responses from Gemma 2b-it  to "Describe a movie you recently watched" under the positive/negative influence of the formality contrast.
 
@@ -110,7 +110,7 @@ To launch an interactive tool for exploring contrastive steering in your browser
 
 ## Bonus: Chat with a base model
 
-Pretraining produces base models that simulate text. Given an initial passage, they complete it probabalistically, trying to mimic what would come next in a document like that from the training corpus. Before the era of instruction-tuning models -- focusing on writing dialogues with helpful assistant characters -- it was a lot of fun to try eliciting different mdoel capabilities with clever completions. The original GPT-2 paper, [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) had great examples; saying ..."like the say in French:" to induce translation, or "tl;dr" to induce summarization. The most fun thing (to me) is to start *in media res* and see where the model takes it. What comes after `absolute fool!"`?
+Pretraining produces base models that simulate text. Given an initial passage, they complete it probabilistically, trying to mimic what would come next in a document like that from the training corpus. Before the era of instruction-tuning models -- focusing on writing dialogues with helpful assistant characters -- it was a lot of fun to try eliciting different model capabilities with clever completions. The original GPT-2 paper, [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) had great examples; saying ..."like the say in French:" to induce translation, or "tl;dr" to induce summarization. The most fun thing (to me) is to start *in media res* and see where the model takes it. What comes after `absolute fool!"`?
 
 <img src="images/absolute-fool.png" width="100%" />
 

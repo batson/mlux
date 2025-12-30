@@ -576,7 +576,7 @@ Answer: The color of Alex's book is</textarea>
                         messages, tokenize=False, add_generation_prompt=True
                     )
                     result[key] = formatted
-        except:
+        except Exception:
             pass
         return jsonify(result)
 
