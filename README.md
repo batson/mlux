@@ -1,26 +1,33 @@
 # mlux
+## Illuminating the insides of mlx models
 
-Model illumination. An interpretability library for MLX models, so you can do small-model interpretability on your Apple laptops.
+My day job is doing [interpretability research](https://www.youtube.com/watch?v=fGKNUvivvnc) at Anthropic, trying to understand how large language models work inside. During the 2025 winter holidays, I was logged out of my work laptop and had a fresh Claude Max subscription, and I wondered what I could do on my old 2021 Macbook Pro. I was quite pleasantly surprised. Thanks to the incredible [mlx](https://github.com/ml-explore/mlx) library enabling fast neural net linear algebra on Apple Silicon and the [mlx-community](https://huggingface.co/mlx-community) ports of open weights language models from Huggingface, I was able to start sampling from models with billions of parameters within 10 minutes.
 
-Inspired by TransformerLens and Penzai.
+For interpretability, you need to be able to record and manipulate the internal states of models. That's what this library, mlux, is for. The basic idea is to introduce hooks (places to read from or write to) into the model by wrapping individual modules (from layers down to linear maps) and intercepting their inputs and outputs. This way you don't have to rewrite any forward or backwards code to onboard a model; you just pick existing modules to inspect and you're on your way. (This is hybrid of the strategies used by the TransformerLens library for pytorch models and the Penzai library for jax models.)
 
-## Features
+I include three vignettes showing the power of these simple approaches below:
 
-- **No rewrites**: Original model components are wrapped, so we don't need to rewrite the forward pass.
-- **Activation caching**: Cache any module's outputs during forward pass
-- **Interventions**: Ablate, patch, or modify activations with hooks
-- **Attention patterns**: Compute attention patterns from cached Q/K
-- **Multi-model support**: Works with Gemma, Llama, Qwen, GPT-2, and any mlx-lm model
+* Logit Lens: see some intermediate states of the model's computation. For example, the model is "thinking" in English even when speaking in French.
+* Activation Patching: see how the model's output changes when an internal state from one prompt is patched into another. For example, we might see that in a story, early layers represent someone by their name, while middle layers by their index in the story ("Second Character Mentioned").
+* Contrastive steering: see how a model's output changes when influenced by the essense extracted from a pair of contrasting different prompts. For example, you can shift the mood, verbosity, hange how models talk using the essense extracted from a different prompt
+
+There are interactive web interfaces for each, launchable from the command line. Finally, there's a bonus widget for interacting with base models (not instruction tuned, no assistant, just a raw simulator of text), which is definitely worth doing if you've never played with a base model before.
+
+Claude wrote 99% of the code in this repo (though I wrote the Readme myself!). The best way to learn about the codebase and to implement new experiments is to chat with Claude Code as well. One of the great pleasures of doing this on your laptop is that Claude can easily run and debug the experiments for you too!
 
 ## Installation
 
 ```bash
 git clone https://github.com/batson/mlux
 cd mlux
-pip install -e .
+pip install -e ".[viewer]"
 ```
 
+Requires macOS with Apple Silicon, and Python 3.9+.
+
 ## Quick Start
+
+Illustrates how to cache model activity, modify the forward pass with hooks, and recover attention patterns. (Attention patterns have to be special-cased as most models never instantiate the attention pattern, rather using some fusion like FlashAttention, and so one cannot probe them directly.)
 
 ```python
 from mlux import HookedModel
@@ -44,64 +51,78 @@ output = hooked.run_with_hooks(
 )
 
 # Get attention patterns
-patterns = hooked.get_attention_patterns("Hello world", layers=[0, 5, 10])
-# patterns[0].shape = [batch, n_heads, seq, seq]
+patterns = hooked.get_attention_patterns("The best way to go to the store is the best way to go", layers=[0, 5, 10])
 ```
 
-## Experiments
+## Vignette 1: Logit Lens
 
-### Logit Lens
+Language models split the prompt into tokens which are vectorized via an embedding, processed through a series of layers, then unembedded back into tokens. Back in 2020, [nostalgebraist observed](https://www.lesswrong.com/posts/AcKRB8wDpdaN6v6ru/interpreting-gpt-the-logit-lens) that if you unembedded early -- decoding the residual stream vectors from before the final layer -- you often got sensible results (at least, starting about halfway through the model). This is the *Logit Lens*. Near the end, you see alternative candidate predictions, and this can tell you how soon the model figured out what it was going to say. But a bit earlier, you often see interesting computational intermediates, such as middle steps in multistep factual or arithmetic questions.
 
-Interactive viewer showing what the model predicts at each layer. See how predictions evolve from garbage in early layers to the final answer.
+What processing a french phrase below -- input french, output french -- we can see the corresponding English in the model's guts! Perhaps the model is "thinking" in English, or some more universal language, regardless of what language it's speaking in. (For more, see [Schut et al.](https://arxiv.org/abs/2502.15603) and [Ameisen et al.](https://transformer-circuits.pub/2025/attribution-graphs/biology.html#dives-multilingual)).
 
-```bash
-pip install flask  # required for web UI
-python -m mlux.experiments.logit_lens
-python -m mlux.experiments.logit_lens --model mlx-community/Qwen2.5-7B-Instruct-4bit
+<img src="images/logit-lens-french-cropped.png" width="100%" />
+
+To launch an interactive tool for exploiring the logit lens in your browser, run `python -m mlux.tools.logit_lens_explorer`.
+
+## Vignette 2: Activation Patching
+
+To understand what a given representation contains, and how the model uses it, you can grab the activation from a source prompt and patch it into another target prompt. Seeing how this changes the model's generation in the target prompt gives a hint as to what the representations contained and were used for.
+
+A striking example of this, shared with me by David Bau, concerns the binding of entities to attributes. If you take the prompt 
+
+```
+Setup: Josh has a yellow book. Jesse has a black book. Alex has a green book.
+Answer: The color of Josh's book is
 ```
 
-Opens a web UI where you can:
-- Enter any prompt
-- See a grid of tokens (rows) × layers (columns)
-- View top predictions at each layer for each token position
-- Switch between residual stream, MLP output, and attention output probes
+And a sister prompt where the order of the entities is changed
 
-### Induction Heads
-
-Find induction heads in any model. (This was a sanity check for attention patterns to see if they matched the previous literature.)
-
-```bash
-python -m mlux.experiments.induction_heads
-python -m mlux.experiments.induction_heads --model mlx-community/gpt2-base-mlx
+```
+Setup: Jesse has a black book. Alex has a green book. Josh has a yellow book.
+Answer: The color of Alex's book is
 ```
 
-### Binding Mechanisms
+and patch the representations from `Josh` into those for `Alex`, you find that:
 
-An attempt to replicate [arXiv:2510.06182](https://arxiv.org/abs/2510.06182):
+1. In early layers, this overwrites the semantic content, and the model looks up Josh's object from the second prompt and says "yellow".
+2. In middle layers, this overwrites binding content: the model looks up the *first entity's* object from the second prompt, and says "black".
+3. In late layers, this overwrites binding content, but too late to matter! The model has already retrieved what it needed from that token position, and says "green".
 
-```bash
-python -m mlux.experiments.binding_mechanisms
-python -m mlux.experiments.binding_mechanisms --compare
-python -m mlux.experiments.binding_mechanisms --causal  # causal intervention analysis
-```
+<img src="images/entity-patching.png" width="100%" />
 
-### Mean Ablation
+To launch an interactive tool for exploring activation patching in your browser, run `python -m mlux.tools.patching_explorer`.
 
-Ablate the residual stream at each (layer, position) and measure the effect on next-token prediction. Uses mean activations (averaged across positions in the prompt) as the ablation target.
+## Vignette 3: Contrastive Steering
 
-```bash
-python -m mlux.experiments.ablation --web  # Web interface with colored heatmap
-python -m mlux.experiments.ablation --prompt "John has a dog. Mary has a cat. What pet does John have?"
-```
+Representations from one prompt can be used to steer the model's generations on another. A shockingly effective method to generate a "steering vector" -- used to push the model in some direction -- is to take a contrasting pair of prompts that differ in exactly the essense you want to capture and then take the difference in the representations at the final token ([Subramani et al.](https://arxiv.org/abs/2205.05124), [Turner et al.](https://arxiv.org/abs/2308.10248)). Injecting this into a new prompt while the model samples from it is a recipe for amusement, and sometimes utility.
 
-The web interface shows a blue-white-red heatmap where:
-- **Red** = ablating this position hurts the prediction
-- **Blue** = ablating this position helps the prediction (removes noise)
-- **White** = no effect
+For example, the difference between "I absolutely love this! It's amazing and wonderful!" and "I absolutely hate this! It's terrible and awful!" can be used to tune the sentiment of a generation from enthusiastic to disparaging. The difference between "hey can u help me out with something real quick" and "I am writing to formally request your assistance with the following matter." tunes formality. More importantly, the difference between "I'd be happy to help you with that! Here's how:" and "I cannot and will not assist with that request because it could be harmful." can be used to bypass refusals.
 
-## Supported Models
+Steering with contrastive pairs is a bit finicky; too low of a multiple of the steering vector has no effect, and too high of a multiple generates gibberish. The exact scaling parameter (`alpha`) will depend on the contrastive pair and on the so if you play around, try tweaking the `alpha` parameter.
 
-Any mlx-lm compatible model: Gemma 2, Llama 3.x, Qwen 2.5, GPT-2, etc.
+Consider two responses from Gemma 2b-it  to "Describe a movie you recently watched" under the positive/negative influence of the formality contrast.
+
+<img src="images/movie-pos-steering.png" width="100%" />
+<img src="images/movie-neg-steering.png" width="100%" />
+
+To launch an interactive tool for exploring contrastive steering in your browser, run `python -m mlux.tools.contrastive_steering_explorer`.
+
+
+## Bonus: Chat with a base model
+
+Pretraining produces base models that simulate text. Given an initial passage, they complete it probabalistically, trying to mimic what would come next in a document like that from the training corpus. Before the era of instruction-tuning models -- focusing on writing dialogues with helpful assistant characters -- it was a lot of fun to try eliciting different mdoel capabilities with clever completions. The original GPT-2 paper, [Language Models are Unsupervised Multitask Learners](https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf) had great examples; saying ..."like the say in French:" to induce translation, or "tl;dr" to induce summarization. The most fun thing (to me) is to start *in media res* and see where the model takes it. What comes after `absolute fool!"`?
+
+<img src="images/absolute-fool.png" width="100%" />
+
+To launch an interactive tool for generating from base models in your browser, run `python -m mlux.tools.base_explorer`.
+
+## Technical Notes
+
+The max model size you can handle depends on the RAM on your machine. Somewhat surprisingly, LLMs can be quantized down to 4 bits per parameter (from 16 to 32 for standard floats) and still work! This opens up models up to 30B or so on a laptop with 32 GB RAM, and even Llama 70B on my 64 GB laptop. Things are snappy and fun in the 1-8GB range. If you are doing serious work, and things seem buggy, try working with less quantized models.
+
+This library populates the dropdown with a few default models, plus whatever is in your HuggingFace cache. If you want another model, you can run it as a flag in the launch commands.
+
+The best way to do new things in the repo, though, is to ask Claude Code!
 
 ## License
 

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Mean Ablation Experiment
+Ablation Explorer
 
 Ablate the residual stream at each (layer, position) by replacing it with
 the mean activation (averaged across positions in the same prompt).
 Shows how much each position at each layer contributes to next-token prediction.
 
 Usage:
-    python -m mlux.experiments.ablation
-    python -m mlux.experiments.ablation --model mlx-community/Qwen2.5-7B-Instruct-4bit
-    python -m mlux.experiments.ablation --prompt "The capital of France is"
-    python -m mlux.experiments.ablation --web  # Launch web interface
+    python -m mlux.tools.ablation_explorer
+    python -m mlux.tools.ablation_explorer --model mlx-community/Qwen2.5-7B-Instruct-4bit
+    python -m mlux.tools.ablation_explorer --prompt "The capital of France is"
+    python -m mlux.tools.ablation_explorer --web  # Launch web interface
 """
 
 import argparse
@@ -28,10 +28,7 @@ def compute_mean_activations(
     tokens: mx.array,
 ) -> Dict[int, mx.array]:
     """
-    Compute mean residual stream activation at each layer from the prompt itself.
-
-    Using the same-prompt mean (averaged across positions) gives much better
-    results than random tokens, which are too out-of-distribution.
+    Compute mean residual stream activation at each layer from the prompt.
 
     Returns dict mapping layer_idx -> mean activation vector [d_model].
     """
@@ -151,7 +148,7 @@ def print_ablation_grid(results: Dict, top_k: int = 10):
     print(f"\n{'=' * 60}")
     print("  TOP ABLATION EFFECTS")
     print(f"{'=' * 60}")
-    print(f"\nBaseline: '{results['baseline_token']}' (p={results['baseline_prob']:.3f})")
+    print(f"\nBaseline prediction: '{results['baseline_token']}' (p={results['baseline_prob']:.3f})")
 
     # Find top effects
     flat_idx = np.argsort(effects.flatten())[::-1][:top_k]
@@ -366,6 +363,12 @@ HTML_TEMPLATE = """
             background: linear-gradient(to right, #2166ac, #67a9cf, #d1e5f0, #ffffff, #fddbc7, #ef8a62, #b2182b);
             border-radius: 2px;
         }
+        .legend-gradient-bwr {
+            width: 150px;
+            height: 16px;
+            background: linear-gradient(to right, #2166ac, #92c5de, #f7f7f7, #f4a582, #b2182b);
+            border-radius: 2px;
+        }
         .loading {
             text-align: center;
             padding: 40px;
@@ -380,6 +383,13 @@ HTML_TEMPLATE = """
 <body>
     <div class="container">
         <h1>Ablation Viewer</h1>
+
+        <p style="margin-bottom: 20px; color: #555; line-height: 1.5; max-width: 900px;">
+            This interface shows what happens when you ablate the residual stream at each token position and each layer.
+            <span style="color: #b2182b; font-weight: 500;">Red</span> means that ablation lowers the probability — the position was important for the prediction.
+            <span style="color: #2166ac; font-weight: 500;">Blue</span> means that ablation raises the probability — the position was harming the prediction.
+            The default text illustrates the induction, or copying of repeated text, phenomenon. Information flows from earlier tokens to later ones.
+        </p>
 
         <div class="controls">
             <div class="top-row">
@@ -407,9 +417,9 @@ HTML_TEMPLATE = """
         </div>
 
         <div class="legend">
-            <span>Helps prediction</span>
-            <div class="legend-gradient"></div>
-            <span>Hurts prediction</span>
+            <span>Ablation helps (was hurting)</span>
+            <div class="legend-gradient-bwr"></div>
+            <span>Ablation hurts (was important)</span>
         </div>
     </div>
 
@@ -467,19 +477,25 @@ HTML_TEMPLATE = """
         }
 
         function getColor(value, maxAbs) {
-            if (maxAbs === 0) return 'rgb(255,255,255)';
+            // bwr colormap: blue (negative) -> white (zero) -> red (positive)
+            // positive = ablation hurt prediction = position was important = RED
+            // negative = ablation helped prediction = position was hurting = BLUE
+            if (maxAbs === 0) return 'rgb(247,247,247)';
             const normalized = Math.max(-1, Math.min(1, value / maxAbs));
 
             if (normalized > 0) {
-                const r = 255;
-                const g = Math.round(255 - normalized * 116);
-                const b = Math.round(255 - normalized * 212);
+                // White to red: #f7f7f7 -> #f4a582 -> #b2182b
+                const t = normalized;
+                const r = Math.round(247 - t * 69);  // 247 -> 178
+                const g = Math.round(247 - t * 223); // 247 -> 24
+                const b = Math.round(247 - t * 204); // 247 -> 43
                 return `rgb(${r},${g},${b})`;
             } else {
-                const factor = -normalized;
-                const r = Math.round(255 - factor * 222);
-                const g = Math.round(255 - factor * 88);
-                const b = 255;
+                // White to blue: #f7f7f7 -> #92c5de -> #2166ac
+                const t = -normalized;
+                const r = Math.round(247 - t * 214); // 247 -> 33
+                const g = Math.round(247 - t * 145); // 247 -> 102
+                const b = Math.round(247 - t * 75);  // 247 -> 172
                 return `rgb(${r},${g},${b})`;
             }
         }
@@ -769,9 +785,9 @@ if __name__ == "__main__":
         help="Prompt to analyze",
     )
     parser.add_argument(
-        "--web",
+        "--cli",
         action="store_true",
-        help="Launch web interface",
+        help="Run CLI experiment instead of web interface",
     )
     parser.add_argument(
         "--port",
@@ -781,10 +797,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    if args.web:
-        run_web(args.model, args.port)
-    else:
+    if args.cli:
         run_experiment(
             model_name=args.model,
             prompt=args.prompt,
         )
+    else:
+        run_web(args.model, args.port)
