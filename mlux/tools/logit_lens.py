@@ -119,6 +119,7 @@ class LogitLens:
         token_idx: int,
         probe_type: str = "resid",
         top_k: int = 5,
+        add_special_tokens: bool | None = True,
     ) -> list[dict]:
         """
         Get top-k token predictions at each layer for a specific token position.
@@ -128,14 +129,18 @@ class LogitLens:
             token_idx: Which token position to analyze
             probe_type: "resid", "mlp_out", or "attn_out"
             top_k: Number of top predictions per layer
+            add_special_tokens: Whether to add BOS/EOS tokens. True by default,
+                None to use tokenizer default, False to disable.
 
         Returns:
             List of dicts with layer predictions
         """
         hooks = self._get_hook_paths(probe_type)
 
+        token_ids = self.hooked.tokenize(text, add_bos=add_special_tokens is not False)
+
         # Run with cache to get all layer activations
-        output, cache = self.hooked.run_with_cache(text, hooks=hooks)
+        output, cache = self.hooked.run_with_cache(mx.array([token_ids]), hooks=hooks)
 
         results = []
         layer_prefix = self.config.get("layer_prefix", "model.layers")
@@ -191,17 +196,28 @@ class LogitLens:
         text: str,
         probe_type: str = "resid",
         top_k: int = 3,
+        add_special_tokens: bool | None = True,
     ) -> dict:
         """
         Get predictions for ALL tokens at ALL layers at once.
+
+        Args:
+            text: Input text
+            probe_type: "resid", "mlp_out", or "attn_out"
+            top_k: Number of top predictions per layer
+            add_special_tokens: Whether to add BOS/EOS tokens. True by default,
+                None to use tokenizer default, False to disable.
 
         Returns:
             Dict with 'tokens' list and 'grid' (tokens x layers x top_k predictions)
         """
         hooks = self._get_hook_paths(probe_type)
-        output, cache = self.hooked.run_with_cache(text, hooks=hooks)
 
-        tokens = self.tokenize_with_info(text)
+        # Tokenize with explicit control over special tokens
+        tokens = self.tokenize_with_info(text, add_special_tokens=add_special_tokens)
+        token_ids = [t["token_id"] for t in tokens]
+
+        output, cache = self.hooked.run_with_cache(mx.array([token_ids]), hooks=hooks)
         n_tokens = len(tokens)
         layer_prefix = self.config.get("layer_prefix", "model.layers")
 
@@ -239,9 +255,17 @@ class LogitLens:
 
         return {"tokens": tokens, "grid": grid, "n_layers": self.n_layers}
 
-    def tokenize_with_info(self, text: str) -> list[dict]:
-        """Tokenize text and return token info for display."""
-        token_ids = self.tokenizer.encode(text)
+    def tokenize_with_info(
+        self, text: str, add_special_tokens: bool | None = True
+    ) -> list[dict]:
+        """Tokenize text and return token info for display.
+
+        Args:
+            text: Input text
+            add_special_tokens: Whether to add BOS/EOS tokens. True by default,
+                None to use tokenizer default, False to disable.
+        """
+        token_ids = self.hooked.tokenize(text, add_bos=add_special_tokens is not False)
         tokens = []
         for i, tid in enumerate(token_ids):
             token_str = self.tokenizer.decode([tid])

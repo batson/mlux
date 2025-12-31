@@ -149,12 +149,34 @@ class HookedModel:
         model, tokenizer = load(model_name, **kwargs)
         return cls(model, tokenizer)
 
-    def _tokenize(self, input: Union[str, mx.array]) -> mx.array:
-        """Convert string to tokens if needed."""
+    def tokenize(self, text: str, add_bos: bool = True) -> list[int]:
+        """
+        Tokenize text with consistent BOS handling across transformers versions.
+
+        Args:
+            text: Input text to tokenize
+            add_bos: Whether to prepend BOS token (default True)
+
+        Returns:
+            List of token IDs
+        """
+        if self.tokenizer is None:
+            raise ValueError("Tokenizer required for string input")
+
+        # Always encode without special tokens, then manually add BOS if needed.
+        # This ensures consistent behavior across transformers versions.
+        token_ids = self.tokenizer.encode(text, add_special_tokens=False)
+
+        if add_bos and self.tokenizer.bos_token_id is not None:
+            if not token_ids or token_ids[0] != self.tokenizer.bos_token_id:
+                token_ids = [self.tokenizer.bos_token_id] + token_ids
+
+        return token_ids
+
+    def _tokenize(self, input: Union[str, mx.array], add_bos: bool = True) -> mx.array:
+        """Convert string to token array if needed."""
         if isinstance(input, str):
-            if self.tokenizer is None:
-                raise ValueError("Tokenizer required for string input")
-            return mx.array([self.tokenizer.encode(input)])
+            return mx.array([self.tokenize(input, add_bos=add_bos)])
         return input
 
     def forward(self, input: Union[str, mx.array]) -> mx.array:

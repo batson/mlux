@@ -259,7 +259,7 @@ def create_app(model_name: str):
     </div>
 
     <div class="input-row">
-        <textarea id="prompt-input" placeholder="enter prompt... (shift+enter for newline)" rows="1">The capital of France is</textarea>
+        <textarea id="prompt-input" placeholder="enter prompt... (shift+enter for newline)" rows="1">Le contraire de "petit" est "</textarea>
         <button class="probe-btn active" data-probe="resid">resid</button>
         <button class="probe-btn" data-probe="mlp_out">mlp</button>
         <button class="probe-btn" data-probe="attn_out">attn</button>
@@ -455,7 +455,7 @@ def create_app(model_name: str):
             text,
             token_idx,
             probe_type=probe_type,
-            top_k=5
+            top_k=5,
         )
         return jsonify(results)
 
