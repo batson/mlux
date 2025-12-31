@@ -197,6 +197,13 @@ def list_local_models() -> list[str]:
         return []
 
 
+DEFAULT_MODELS = [
+    "mlx-community/gemma-2-2b-it-4bit",
+    "mlx-community/Llama-3.1-8B-Instruct-4bit",
+    "mlx-community/Qwen2.5-7B-Instruct-4bit",
+]
+
+
 def get_cached_models() -> list[str]:
     """
     Get list of mlx-community models in HF cache.
@@ -215,3 +222,35 @@ def get_cached_models() -> list[str]:
     except FileNotFoundError:
         pass
     return sorted(models)
+
+
+def get_model_options() -> list[dict]:
+    """
+    Get model options for UI dropdowns.
+
+    Always includes DEFAULT_MODELS, plus any other cached models.
+    Non-cached defaults are marked with "(select to download)".
+
+    Returns:
+        List of dicts with 'id', 'display', and 'cached' keys.
+    """
+    cached = set(get_cached_models())
+
+    options = []
+    seen = set()
+
+    # Add defaults first
+    for model_id in DEFAULT_MODELS:
+        is_cached = model_id in cached
+        short_name = model_id.replace("mlx-community/", "")
+        display = short_name if is_cached else f"{short_name} (select to download)"
+        options.append({"id": model_id, "display": display, "cached": is_cached})
+        seen.add(model_id)
+
+    # Add remaining cached models
+    for model_id in sorted(cached):
+        if model_id not in seen:
+            short_name = model_id.replace("mlx-community/", "")
+            options.append({"id": model_id, "display": short_name, "cached": True})
+
+    return options

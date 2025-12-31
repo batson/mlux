@@ -50,6 +50,8 @@ from .utils import (
     collect_activations,
     list_local_models,
     get_cached_models,
+    get_model_options,
+    DEFAULT_MODELS,
 )
 from .steering import (
     ContrastiveSteering,
@@ -91,4 +93,6 @@ __all__ = [
     "collect_activations",
     "list_local_models",
     "get_cached_models",
+    "get_model_options",
+    "DEFAULT_MODELS",
 ]

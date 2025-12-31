@@ -21,7 +21,7 @@ import mlx.core as mx
 import numpy as np
 
 from mlux import HookedModel
-from mlux.utils import get_cached_models
+from mlux.utils import get_model_options
 
 
 def compute_mean_activations(
@@ -395,8 +395,8 @@ HTML_TEMPLATE = """
         <div class="controls">
             <div class="top-row">
                 <select id="model-select" onchange="swapModel()">
-                    {% for m in cached_models %}
-                    <option value="{{ m }}"{% if m == model_name %} selected{% endif %}>{{ m }}</option>
+                    {% for m in model_options %}
+                    <option value="{{ m.id }}"{% if m.id == model_name %} selected{% endif %}>{{ m.display }}</option>
                     {% endfor %}
                 </select>
                 <span id="status" class="status"></span>
@@ -626,7 +626,15 @@ def create_app(model_name: str):
 
     # Global state
     state = {"hooked": None, "model_name": model_name, "n_layers": 0}
-    cached_models = get_cached_models()
+
+    def get_options_with_current():
+        """Get model options, ensuring current model is included."""
+        options = get_model_options()
+        option_ids = {m["id"] for m in options}
+        if state["model_name"] not in option_ids:
+            short_name = state["model_name"].replace("mlx-community/", "")
+            options.insert(0, {"id": state["model_name"], "display": short_name, "cached": True})
+        return options
 
     def load_model(name: str):
         print(f"Loading {name}...")
@@ -644,15 +652,13 @@ def create_app(model_name: str):
             HTML_TEMPLATE,
             model_name=state["model_name"],
             n_layers=state["n_layers"],
-            cached_models=cached_models if state["model_name"] in cached_models else [state["model_name"]] + cached_models
+            model_options=get_options_with_current()
         )
 
     @app.route("/models")
     def models():
-        cached = get_cached_models()
-        if state["model_name"] not in cached:
-            cached.insert(0, state["model_name"])
-        return jsonify(cached)
+        options = get_options_with_current()
+        return jsonify([m["id"] for m in options])
 
     @app.route("/swap_model", methods=["POST"])
     def swap_model():

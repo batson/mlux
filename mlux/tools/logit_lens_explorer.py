@@ -16,7 +16,7 @@ import threading
 import webbrowser
 
 from mlux import HookedModel
-from mlux.utils import get_cached_models
+from mlux.utils import get_model_options
 from .logit_lens import LogitLens
 
 
@@ -29,8 +29,8 @@ def create_app(model_name: str):
 
     app = Flask(__name__)
 
-    # Get cached models for dropdown
-    cached_models = get_cached_models()
+    # Get model options for dropdown
+    model_options = get_model_options()
 
     # Model state (mutable)
     state = {"model_name": model_name, "lens": None}
@@ -246,8 +246,8 @@ def create_app(model_name: str):
     <div class="header">
         <h1>logit lens</h1>
         <select id="model-select" onchange="modelChanged()">
-            {% for m in cached_models %}
-            <option value="{{ m }}"{% if m == model_name %} selected{% endif %}>{{ m.replace('mlx-community/', '') }}</option>
+            {% for m in model_options %}
+            <option value="{{ m.id }}"{% if m.id == model_name %} selected{% endif %}>{{ m.display }}</option>
             {% endfor %}
         </select>
         <span class="subtitle">{{ n_layers }} layers</span>
@@ -434,7 +434,7 @@ def create_app(model_name: str):
             HTML_TEMPLATE,
             model_name=state["model_name"],
             n_layers=state["lens"].n_layers,
-            cached_models=cached_models
+            model_options=model_options
         )
 
     @app.route('/tokenize', methods=['POST'])

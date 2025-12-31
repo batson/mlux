@@ -28,7 +28,7 @@ from mlux.steering import (
     generate_from_cache_stream,
     create_steering_hook,
 )
-from mlux.utils import get_cached_models
+from mlux.utils import get_model_options
 
 
 def create_app(model_name: str):
@@ -39,7 +39,7 @@ def create_app(model_name: str):
         raise ImportError("Flask required. Install with: pip install flask")
 
     app = Flask(__name__)
-    cached_models = get_cached_models()
+    model_options = get_model_options()
 
     # Model state
     state = {
@@ -267,8 +267,8 @@ def create_app(model_name: str):
     <div class="header">
         <h1>steering explorer</h1>
         <select id="model-select" onchange="swapModel()">
-            {% for m in cached_models %}
-            <option value="{{ m }}"{% if m == model_name %} selected{% endif %}>{{ m.replace('mlx-community/', '') }}</option>
+            {% for m in model_options %}
+            <option value="{{ m.id }}"{% if m.id == model_name %} selected{% endif %}>{{ m.display }}</option>
             {% endfor %}
         </select>
         <span class="subtitle">{{ n_layers }} layers</span>
@@ -589,7 +589,7 @@ Describe a movie you recently watched.<end_of_turn>
             HTML_TEMPLATE,
             model_name=state["model_name"],
             n_layers=state["n_layers"],
-            cached_models=cached_models
+            model_options=model_options
         )
 
     @app.route('/swap_model', methods=['POST'])
