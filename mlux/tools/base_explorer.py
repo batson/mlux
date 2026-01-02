@@ -10,15 +10,18 @@ Usage:
     python -m mlux.tools.base_explorer --model mlx-community/Qwen2.5-7B-4bit
 """
 
-import argparse
 import json
 import threading
-import webbrowser
 
 import mlx.core as mx
 
 from mlux import HookedModel
 from mlux.steering import prefill_with_cache, generate_from_cache_stream
+from mlux.utils import get_cached_models
+from .explorer_utils import add_lifecycle_routes, run_explorer, create_arg_parser
+
+# Server reference for shutdown (single-element list for mutability)
+_server_ref = []
 
 
 # Default base models (no instruction tuning)
@@ -41,21 +44,6 @@ def _is_instruct_model(model_id: str) -> bool:
     """Check if a model is instruction-tuned based on its name."""
     lower = model_id.lower()
     return any(x in lower for x in ['instruct', '-it-', '-it_', '-it.']) or lower.endswith('-it') or lower.endswith('-it-4bit')
-
-
-def get_cached_models() -> set[str]:
-    """Get set of mlx-community models in HF cache."""
-    import os
-    cache_dir = os.path.expanduser("~/.cache/huggingface/hub/")
-    models = set()
-    try:
-        for name in os.listdir(cache_dir):
-            if name.startswith("models--mlx-community--"):
-                model_id = name.replace("models--", "").replace("--", "/")
-                models.add(model_id)
-    except FileNotFoundError:
-        pass
-    return models
 
 
 def get_model_options() -> dict[str, list[dict]]:
@@ -523,38 +511,26 @@ def create_app(model_name: str):
 
         return Response(stream(), mimetype='text/event-stream')
 
+    # Add /health and /shutdown routes
+    add_lifecycle_routes(app, state, "base", _server_ref)
+
     return app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Base Model Explorer")
-    parser.add_argument(
-        "--model",
-        default="mlx-community/Meta-Llama-3.1-8B-4bit",
-        help="Model name (default: Meta-Llama-3.1-8B-4bit)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=5002,
-        help="Port to run the server on",
-    )
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host to bind to",
-    )
+    parser = create_arg_parser("Base Model Explorer", default_port=5005)
+    parser.set_defaults(model="mlx-community/Meta-Llama-3.1-8B-4bit")
     args = parser.parse_args()
 
     app = create_app(args.model)
-    url = f"http://{args.host}:{args.port}"
-    print(f"\nBase Model Explorer running at {url}")
-    print("Press Ctrl+C to stop\n")
-
-    # Open browser after short delay (so server is ready)
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-
-    app.run(host=args.host, port=args.port, debug=False)
+    run_explorer(
+        app,
+        name="Base Model Explorer",
+        host=args.host,
+        port=args.port,
+        server_ref=_server_ref,
+        open_browser=not args.no_browser
+    )
 
 
 if __name__ == "__main__":

@@ -11,15 +11,16 @@ Usage:
     python -m mlux.tools.patching_explorer --port 5004
 """
 
-import argparse
 import json
-import threading
-import webbrowser
 
 import mlx.core as mx
 
 from mlux import HookedModel
 from mlux.utils import get_model_options
+from .explorer_utils import add_lifecycle_routes, run_explorer, create_arg_parser
+
+# Server reference for shutdown (single-element list for mutability)
+_server_ref = []
 
 
 def create_app(model_name: str):
@@ -32,15 +33,6 @@ def create_app(model_name: str):
     app = Flask(__name__)
 
     state = {"model_name": model_name, "hooked": None, "n_layers": 0}
-
-    def get_options_with_current():
-        """Get model options, ensuring current model is included."""
-        options = get_model_options()
-        option_ids = {m["id"] for m in options}
-        if state["model_name"] not in option_ids:
-            short_name = state["model_name"].replace("mlx-community/", "")
-            options.insert(0, {"id": state["model_name"], "display": short_name, "cached": True})
-        return options
 
     def load_model(name: str):
         print(f"Loading {name}...")
@@ -553,7 +545,7 @@ Answer: The color of Alex's book is</textarea>
             HTML_TEMPLATE,
             model_name=state["model_name"],
             n_layers=state["n_layers"],
-            model_options=get_options_with_current()
+            model_options=get_model_options()
         )
 
     @app.route('/swap_model', methods=['POST'])
@@ -707,37 +699,25 @@ Answer: The color of Alex's book is</textarea>
 
         return preds
 
+    # Add /health and /shutdown routes
+    add_lifecycle_routes(app, state, "patching", _server_ref)
+
     return app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Activation Patching Explorer")
-    parser.add_argument(
-        "--model",
-        default="mlx-community/gemma-2-2b-it-4bit",
-        help="Model name (default: gemma-2-2b-it-4bit)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=5004,
-        help="Port to run the server on (default: 5004)",
-    )
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host to bind to (default: localhost)",
-    )
+    parser = create_arg_parser("Activation Patching Explorer", default_port=5002)
     args = parser.parse_args()
 
     app = create_app(args.model)
-    url = f"http://{args.host}:{args.port}"
-    print(f"\nActivation Patching Explorer running at {url}")
-    print("Press Ctrl+C to stop\n")
-
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-
-    app.run(host=args.host, port=args.port, debug=False)
+    run_explorer(
+        app,
+        name="Activation Patching Explorer",
+        host=args.host,
+        port=args.port,
+        server_ref=_server_ref,
+        open_browser=not args.no_browser
+    )
 
 
 if __name__ == "__main__":

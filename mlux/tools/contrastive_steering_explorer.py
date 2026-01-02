@@ -12,11 +12,8 @@ Usage:
     python -m mlux.tools.contrastive_steering_explorer --model mlx-community/Llama-3.2-3B-Instruct-4bit
 """
 
-import argparse
 import json
 import threading
-import webbrowser
-from typing import Optional
 
 import mlx.core as mx
 
@@ -29,6 +26,10 @@ from mlux.steering import (
     create_steering_hook,
 )
 from mlux.utils import get_model_options
+from .explorer_utils import add_lifecycle_routes, run_explorer, create_arg_parser
+
+# Server reference for shutdown (single-element list for mutability)
+_server_ref = []
 
 
 def create_app(model_name: str):
@@ -733,38 +734,25 @@ Describe a movie you recently watched.<end_of_turn>
         except Exception as e:
             return jsonify({"error": str(e)})
 
+    # Add /health and /shutdown routes
+    add_lifecycle_routes(app, state, "steering", _server_ref)
+
     return app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Interactive Steering Explorer")
-    parser.add_argument(
-        "--model",
-        default="mlx-community/gemma-2-2b-it-4bit",
-        help="Model name",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=5001,
-        help="Port to run the server on",
-    )
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host to bind to",
-    )
+    parser = create_arg_parser("Contrastive Steering Explorer", default_port=5003)
     args = parser.parse_args()
 
     app = create_app(args.model)
-    url = f"http://{args.host}:{args.port}"
-    print(f"\nSteering Explorer running at {url}")
-    print("Press Ctrl+C to stop\n")
-
-    # Open browser after short delay (so server is ready)
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-
-    app.run(host=args.host, port=args.port, debug=False)
+    run_explorer(
+        app,
+        name="Contrastive Steering Explorer",
+        host=args.host,
+        port=args.port,
+        server_ref=_server_ref,
+        open_browser=not args.no_browser
+    )
 
 
 if __name__ == "__main__":
