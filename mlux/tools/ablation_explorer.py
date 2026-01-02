@@ -9,25 +9,25 @@ Shows how much each position at each layer contributes to next-token prediction.
 Usage:
     python -m mlux.tools.ablation_explorer
     python -m mlux.tools.ablation_explorer --model mlx-community/Qwen2.5-7B-Instruct-4bit
-    python -m mlux.tools.ablation_explorer --prompt "The capital of France is"
-    python -m mlux.tools.ablation_explorer --web  # Launch web interface
 """
 
-import argparse
 import json
-from typing import Dict
 
 import mlx.core as mx
 import numpy as np
 
 from mlux import HookedModel
 from mlux.utils import get_model_options
+from .explorer_utils import add_lifecycle_routes, run_explorer, create_arg_parser
+
+# Server reference for shutdown (single-element list for mutability)
+_server_ref = []
 
 
 def compute_mean_activations(
     hooked: HookedModel,
     tokens: mx.array,
-) -> Dict[int, mx.array]:
+) -> dict[int, mx.array]:
     """
     Compute mean residual stream activation at each layer from the prompt.
 
@@ -50,172 +50,6 @@ def compute_mean_activations(
 
     return means
 
-
-def run_ablation_sweep(
-    hooked: HookedModel,
-    prompt: str,
-    mean_activations: Dict[int, mx.array],
-) -> Dict:
-    """
-    Ablate each (layer, position) and measure effect on next-token probability.
-
-    Returns dict with:
-    - tokens: list of token strings
-    - baseline_prob: probability of correct next token without ablation
-    - effects: [n_layers+1, seq_len] array of probability drops (first row is embedding)
-    """
-    tokens = hooked.tokenizer.encode(prompt)
-    token_strs = [hooked.tokenizer.decode([t]) for t in tokens]
-    seq_len = len(tokens)
-
-    n_layers = hooked.config["n_layers"]
-    layer_prefix = hooked.config.get("layer_prefix", "model.layers")
-
-    # Get baseline prediction
-    logits = hooked.forward(prompt)
-    mx.eval(logits)
-    baseline_probs = mx.softmax(logits[0, -1, :], axis=-1)
-    top_token = mx.argmax(baseline_probs).item()
-    baseline_prob = baseline_probs[top_token].item()
-    top_token_str = hooked.tokenizer.decode([top_token])
-
-    print(f"\nPrompt: {prompt}")
-    print(f"Baseline prediction: '{top_token_str}' (p={baseline_prob:.3f})")
-    print(f"\nRunning ablation sweep over {n_layers} layers x {seq_len} positions...")
-
-    tokens_arr = mx.array([tokens])
-
-    # Layer ablations
-    # effects[layer, pos] = probability drop when ablating that position at that layer
-    layer_effects = np.zeros((n_layers, seq_len))
-
-    # Pre-create all ablation hooks to avoid closure issues
-    def create_ablate_hook(ablate_pos, mean_vec):
-        """Create ablation hook with explicit closure capture."""
-        def hook_fn(inputs, output, wrapper):
-            batch, seq, d = output.shape
-            parts = []
-            if ablate_pos > 0:
-                parts.append(output[:, :ablate_pos, :])
-            parts.append(mean_vec.reshape(1, 1, -1))
-            if ablate_pos < seq - 1:
-                parts.append(output[:, ablate_pos + 1:, :])
-            return mx.concatenate(parts, axis=1)
-        return hook_fn
-
-    # Ablate at each layer
-    for layer_idx in range(n_layers):
-        hook_path = f"{layer_prefix}.{layer_idx}"
-        mean_act = mean_activations[layer_idx]
-
-        # Ablate each position
-        for pos in range(seq_len):
-            hook_fn = create_ablate_hook(pos, mean_act)
-            hooks = [(hook_path, hook_fn)]
-            ablated_output = hooked.run_with_hooks(tokens_arr, hooks=hooks)
-            mx.eval(ablated_output)
-
-            ablated_logits = ablated_output[0, -1, :]
-            # Handle potential NaN/Inf from unstable ablations
-            if mx.any(mx.isnan(ablated_logits)).item() or mx.any(mx.isinf(ablated_logits)).item():
-                ablated_prob = 0.0  # Treat as complete destruction
-            else:
-                ablated_probs = mx.softmax(ablated_logits, axis=-1)
-                ablated_prob = ablated_probs[top_token].item()
-
-            # Effect = how much probability dropped
-            layer_effects[layer_idx, pos] = baseline_prob - ablated_prob
-
-        max_effect = layer_effects[layer_idx].max()
-        max_pos = layer_effects[layer_idx].argmax()
-        print(f"  L{layer_idx:2d}: max effect = {max_effect:+.3f} at pos {max_pos} ('{token_strs[max_pos]}')")
-
-    return {
-        "tokens": token_strs,
-        "baseline_prob": baseline_prob,
-        "baseline_token": top_token_str,
-        "effects": layer_effects,
-        "layer_labels": [f"L{i}" for i in range(n_layers)],
-    }
-
-
-def print_ablation_grid(results: Dict, top_k: int = 10):
-    """Print the most impactful ablation positions."""
-    effects = results["effects"]
-    tokens = results["tokens"]
-    layer_labels = results.get("layer_labels", [f"L{i}" for i in range(effects.shape[0])])
-    n_layers, seq_len = effects.shape
-
-    print(f"\n{'=' * 60}")
-    print("  TOP ABLATION EFFECTS")
-    print(f"{'=' * 60}")
-    print(f"\nBaseline prediction: '{results['baseline_token']}' (p={results['baseline_prob']:.3f})")
-
-    # Find top effects
-    flat_idx = np.argsort(effects.flatten())[::-1][:top_k]
-
-    print(f"\nTop {top_k} positions where ablation hurts most:")
-    for rank, idx in enumerate(flat_idx):
-        layer = idx // seq_len
-        pos = idx % seq_len
-        effect = effects[layer, pos]
-        token = tokens[pos]
-        label = layer_labels[layer]
-        print(f"  {rank + 1}. {label:5s} pos {pos:2d} ('{token}'): -{effect:.3f}")
-
-    # Print layer summary (sum across positions)
-    print(f"\n{'=' * 60}")
-    print("  LAYER IMPORTANCE (summed across positions)")
-    print(f"{'=' * 60}")
-    layer_importance = effects.sum(axis=1)
-    max_layer_imp = max(abs(layer_importance.min()), layer_importance.max()) if layer_importance.max() > 0 else 1
-    for layer in range(n_layers):
-        bar_len = int(abs(layer_importance[layer]) / max_layer_imp * 30) if max_layer_imp > 0 else 0
-        bar = "█" * bar_len
-        label = layer_labels[layer]
-        print(f"  {label:5s} {bar} {layer_importance[layer]:.3f}")
-
-    # Print position summary (sum across layers)
-    print(f"\n{'=' * 60}")
-    print("  POSITION IMPORTANCE (summed across layers)")
-    print(f"{'=' * 60}")
-    pos_importance = effects.sum(axis=0)
-    max_pos_imp = max(abs(pos_importance.min()), pos_importance.max()) if pos_importance.max() > 0 else 1
-    for pos in range(seq_len):
-        bar_len = int(abs(pos_importance[pos]) / max_pos_imp * 30) if max_pos_imp > 0 else 0
-        bar = "█" * bar_len
-        print(f"  {pos:2d} '{tokens[pos]:12s}' {bar} {pos_importance[pos]:.3f}")
-
-
-def run_experiment(
-    model_name: str = "mlx-community/gemma-2-2b-it-4bit",
-    prompt: str = "The capital of France is",
-):
-    """Run the full ablation experiment."""
-    print("\n" + "=" * 60)
-    print("  MEAN ABLATION EXPERIMENT")
-    print("=" * 60)
-
-    print(f"\nLoading {model_name}...")
-    hooked = HookedModel.from_pretrained(model_name)
-
-    # Tokenize prompt
-    tokens = hooked.tokenizer.encode(prompt)
-    tokens_arr = mx.array([tokens])
-
-    print(f"\nComputing mean activations from prompt ({len(tokens)} tokens)...")
-    mean_activations = compute_mean_activations(hooked, tokens_arr)
-
-    results = run_ablation_sweep(hooked, prompt, mean_activations)
-
-    print_ablation_grid(results)
-
-    return results
-
-
-###############################################################################
-# WEB INTERFACE
-###############################################################################
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -627,15 +461,6 @@ def create_app(model_name: str):
     # Global state
     state = {"hooked": None, "model_name": model_name, "n_layers": 0}
 
-    def get_options_with_current():
-        """Get model options, ensuring current model is included."""
-        options = get_model_options()
-        option_ids = {m["id"] for m in options}
-        if state["model_name"] not in option_ids:
-            short_name = state["model_name"].replace("mlx-community/", "")
-            options.insert(0, {"id": state["model_name"], "display": short_name, "cached": True})
-        return options
-
     def load_model(name: str):
         print(f"Loading {name}...")
         state["hooked"] = HookedModel.from_pretrained(name)
@@ -652,13 +477,8 @@ def create_app(model_name: str):
             HTML_TEMPLATE,
             model_name=state["model_name"],
             n_layers=state["n_layers"],
-            model_options=get_options_with_current()
+            model_options=get_model_options()
         )
-
-    @app.route("/models")
-    def models():
-        options = get_options_with_current()
-        return jsonify([m["id"] for m in options])
 
     @app.route("/swap_model", methods=["POST"])
     def swap_model():
@@ -755,46 +575,26 @@ def create_app(model_name: str):
 
         return Response(generate(), mimetype='text/event-stream')
 
+    # Add /health and /shutdown routes
+    add_lifecycle_routes(app, state, "ablation", _server_ref)
+
     return app
 
 
-def run_web(model_name: str, port: int = 5002):
-    """Run the web interface."""
-    app = create_app(model_name)
-    print(f"\nAblation Viewer running at http://127.0.0.1:{port}")
-    print("Press Ctrl+C to stop\n")
-    app.run(host="127.0.0.1", port=port, debug=False)
+def main():
+    parser = create_arg_parser("Ablation Explorer", default_port=5004)
+    args = parser.parse_args()
+
+    app = create_app(args.model)
+    run_explorer(
+        app,
+        name="Ablation Explorer",
+        host=args.host,
+        port=args.port,
+        server_ref=_server_ref,
+        open_browser=not args.no_browser
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Mean ablation experiment")
-    parser.add_argument(
-        "--model",
-        default="mlx-community/gemma-2-2b-it-4bit",
-        help="Model name",
-    )
-    parser.add_argument(
-        "--prompt",
-        default="The capital of France is",
-        help="Prompt to analyze",
-    )
-    parser.add_argument(
-        "--cli",
-        action="store_true",
-        help="Run CLI experiment instead of web interface",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=5005,
-        help="Port for web interface (default: 5005)",
-    )
-    args = parser.parse_args()
-
-    if args.cli:
-        run_experiment(
-            model_name=args.model,
-            prompt=args.prompt,
-        )
-    else:
-        run_web(args.model, args.port)
+    main()

@@ -11,13 +11,13 @@ Usage:
     python -m mlux.tools.logit_lens_explorer --port 5001
 """
 
-import argparse
-import threading
-import webbrowser
-
 from mlux import HookedModel
 from mlux.utils import get_model_options
 from .logit_lens import LogitLens
+from .explorer_utils import add_lifecycle_routes, run_explorer, create_arg_parser
+
+# Server reference for shutdown (single-element list for mutability)
+_server_ref = []
 
 
 def create_app(model_name: str):
@@ -498,38 +498,25 @@ def create_app(model_name: str):
                 pass
         return jsonify({"template": None, "supported": False})
 
+    # Add /health and /shutdown routes
+    add_lifecycle_routes(app, state, "logit-lens", _server_ref)
+
     return app
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Interactive Logit Lens Viewer")
-    parser.add_argument(
-        "--model",
-        default="mlx-community/gemma-2-2b-it-4bit",
-        help="Model name (default: gemma-2-2b-it-4bit)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=5003,
-        help="Port to run the server on (default: 5003)",
-    )
-    parser.add_argument(
-        "--host",
-        default="localhost",
-        help="Host to bind to (default: localhost)",
-    )
+    parser = create_arg_parser("Interactive Logit Lens Viewer", default_port=5001)
     args = parser.parse_args()
 
     app = create_app(args.model)
-    url = f"http://{args.host}:{args.port}"
-    print(f"\nLogit Lens Viewer running at {url}")
-    print("Press Ctrl+C to stop\n")
-
-    # Open browser after short delay (so server is ready)
-    threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-
-    app.run(host=args.host, port=args.port, debug=False)
+    run_explorer(
+        app,
+        name="Logit Lens Viewer",
+        host=args.host,
+        port=args.port,
+        server_ref=_server_ref,
+        open_browser=not args.no_browser
+    )
 
 
 if __name__ == "__main__":
