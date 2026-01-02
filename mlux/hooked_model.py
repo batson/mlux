@@ -34,8 +34,14 @@ def _detect_quantization_bits(model: nn.Module) -> Optional[int]:
 
         layer = layers[0]
 
-        # Check MLP or attention for quantized linear
-        for submodule in [layer.mlp, layer.self_attn] if hasattr(layer, 'mlp') else [layer]:
+        # Check MLP/feed_forward or attention for quantized linear
+        # Different architectures use different names: mlp, feed_forward, self_attn, conv
+        possible_submodules = []
+        for attr in ['mlp', 'feed_forward', 'self_attn', 'conv']:
+            if hasattr(layer, attr):
+                possible_submodules.append(getattr(layer, attr))
+
+        for submodule in possible_submodules if possible_submodules else [layer]:
             if submodule is None:
                 continue
             for name, mod in submodule.items() if hasattr(submodule, 'items') else []:
