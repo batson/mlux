@@ -68,7 +68,17 @@ def get_attention_info(model) -> dict:
     """
     Extract attention configuration from a model.
 
-    Returns dict with n_layers, n_heads, n_kv_heads, d_head, softcap, layer_prefix.
+    Returns dict with:
+        - n_layers: total number of layers
+        - n_heads: number of attention heads
+        - n_kv_heads: number of key/value heads (for GQA)
+        - d_head: head dimension
+        - softcap: attention logit softcapping value (if any)
+        - layer_prefix: path prefix for layers (e.g., "model.layers")
+        - qkv_style: "separate" for q_proj/k_proj/v_proj, "combined" for c_attn
+        - layer_types: list of layer type strings (e.g., ["attention", "attention", ...])
+                       or None if all layers are uniform attention
+        - attention_layers: list of layer indices that have attention (for hybrid models)
     """
     info = {
         "n_layers": None,
@@ -78,9 +88,11 @@ def get_attention_info(model) -> dict:
         "softcap": None,
         "layer_prefix": "model.layers",  # Default for Llama/Gemma/Qwen style
         "qkv_style": "separate",  # "separate" for q_proj/k_proj/v_proj, "combined" for c_attn
+        "layer_types": None,  # None means all attention, list for hybrid models
+        "attention_layers": None,  # List of layer indices with attention
     }
 
-    # Try standard structure: model.model.args (Llama, Gemma, Qwen)
+    # Try standard structure: model.model.args (Llama, Gemma, Qwen, LFM2)
     if hasattr(model, "model") and hasattr(model.model, "args"):
         args = model.model.args
         if hasattr(args, "num_hidden_layers"):
@@ -94,13 +106,36 @@ def get_attention_info(model) -> dict:
         elif hasattr(args, "hidden_size") and info["n_heads"]:
             info["d_head"] = args.hidden_size // info["n_heads"]
 
-        # Try to get softcap from attention layer
+        # Check for hybrid architectures (e.g., LFM2 with attention + conv layers)
+        if hasattr(args, "full_attn_idxs") and args.full_attn_idxs is not None:
+            # LFM2-style: specific layers have attention, others have conv
+            info["attention_layers"] = list(args.full_attn_idxs)
+            if info["n_layers"]:
+                info["layer_types"] = [
+                    "attention" if i in args.full_attn_idxs else "conv"
+                    for i in range(info["n_layers"])
+                ]
+        elif hasattr(args, "layer_types") and args.layer_types is not None:
+            # Generic layer_types from config
+            info["layer_types"] = list(args.layer_types)
+            info["attention_layers"] = [
+                i for i, t in enumerate(args.layer_types)
+                if "attention" in t.lower()
+            ]
+
+        # Try to get softcap from an attention layer
         if hasattr(model.model, "layers"):
-            layer0 = model.model.layers[0]
-            if hasattr(layer0, "self_attn"):
-                attn = layer0.self_attn
-                if hasattr(attn, "attn_logit_softcapping"):
-                    info["softcap"] = attn.attn_logit_softcapping
+            # Find a layer with attention
+            for layer in model.model.layers:
+                if hasattr(layer, "self_attn"):
+                    attn = layer.self_attn
+                    if hasattr(attn, "attn_logit_softcapping"):
+                        info["softcap"] = attn.attn_logit_softcapping
+                    break
+
+        # If no hybrid info found, assume all layers have attention
+        if info["attention_layers"] is None and info["n_layers"]:
+            info["attention_layers"] = list(range(info["n_layers"]))
 
     # Try GPT-2 style: model.args directly, model.h for layers
     elif hasattr(model, "args"):
@@ -119,6 +154,10 @@ def get_attention_info(model) -> dict:
         # GPT-2 uses model.h for layers and combined c_attn
         info["layer_prefix"] = "model.h"
         info["qkv_style"] = "combined"
+
+        # GPT-2 has attention in all layers
+        if info["n_layers"]:
+            info["attention_layers"] = list(range(info["n_layers"]))
 
     return info
 
@@ -147,13 +186,36 @@ class AttentionPatternHelper:
 
         Args:
             input: String or token array
-            layers: List of layer indices
+            layers: List of layer indices (must be attention layers)
 
         Returns:
             Dict mapping layer index -> attention pattern [batch, heads, seq, seq]
+
+        Raises:
+            ValueError: If any requested layer doesn't have attention
+                        (e.g., conv layers in hybrid models like LFM2)
         """
         layer_prefix = self.info["layer_prefix"]
         qkv_style = self.info["qkv_style"]
+        attention_layers = self.info.get("attention_layers")
+
+        # Validate that all requested layers have attention
+        if attention_layers is not None:
+            non_attention = [l for l in layers if l not in attention_layers]
+            if non_attention:
+                layer_types = self.info.get("layer_types")
+                if layer_types:
+                    type_info = {l: layer_types[l] for l in non_attention if l < len(layer_types)}
+                    raise ValueError(
+                        f"Layers {non_attention} don't have attention. "
+                        f"Layer types: {type_info}. "
+                        f"Attention layers: {attention_layers}"
+                    )
+                else:
+                    raise ValueError(
+                        f"Layers {non_attention} don't have attention. "
+                        f"Attention layers: {attention_layers}"
+                    )
 
         # Build hooks based on model style
         hooks = []

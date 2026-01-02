@@ -45,8 +45,8 @@ class LogitLens:
 
     def _find_final_norm(self) -> nn.Module:
         """Find the final layer norm (before lm_head)."""
-        # Try common names
-        for name in ["model.norm", "norm", "ln_f", "model.ln_f"]:
+        # Try common names (order matters - more specific first)
+        for name in ["model.norm", "model.embedding_norm", "norm", "embedding_norm", "ln_f", "model.ln_f"]:
             try:
                 parts = name.split(".")
                 obj = self.model
