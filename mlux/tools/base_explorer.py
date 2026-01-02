@@ -21,31 +21,83 @@ from mlux import HookedModel
 from mlux.steering import prefill_with_cache, generate_from_cache_stream
 
 
-# Base models (no instruction tuning)
-BASE_MODELS = [
+# Default base models (no instruction tuning)
+DEFAULT_BASE_MODELS = [
     "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
     "mlx-community/Qwen2.5-7B-4bit",
     "mlx-community/gemma-2-9b-4bit",
     "mlx-community/Meta-Llama-3.1-8B-4bit",
 ]
 
+# Default instruct models
+DEFAULT_INSTRUCT_MODELS = [
+    "mlx-community/gemma-2-2b-it-4bit",
+    "mlx-community/Llama-3.1-8B-Instruct-4bit",
+    "mlx-community/Qwen2.5-7B-Instruct-4bit",
+]
 
-def get_cached_base_models() -> list[str]:
-    """Get list of base models in HF cache."""
+
+def _is_instruct_model(model_id: str) -> bool:
+    """Check if a model is instruction-tuned based on its name."""
+    lower = model_id.lower()
+    return any(x in lower for x in ['instruct', '-it-', '-it_', '-it.']) or lower.endswith('-it') or lower.endswith('-it-4bit')
+
+
+def get_cached_models() -> set[str]:
+    """Get set of mlx-community models in HF cache."""
     import os
     cache_dir = os.path.expanduser("~/.cache/huggingface/hub/")
-    models = []
+    models = set()
     try:
         for name in os.listdir(cache_dir):
             if name.startswith("models--mlx-community--"):
                 model_id = name.replace("models--", "").replace("--", "/")
-                # Filter to base models (no instruct/-it suffix)
-                lower = model_id.lower()
-                if not any(x in lower for x in ['instruct', '-it-', '-it_', '-it.']) and not lower.endswith('-it') and not lower.endswith('-it-4bit'):
-                    models.append(model_id)
+                models.add(model_id)
     except FileNotFoundError:
         pass
-    return sorted(models)
+    return models
+
+
+def get_model_options() -> dict[str, list[dict]]:
+    """
+    Get model options for UI dropdown, split by base vs instruct.
+
+    Returns:
+        Dict with 'base' and 'instruct' keys, each containing a list of
+        dicts with 'id', 'display', and 'cached' keys.
+    """
+    cached = get_cached_models()
+
+    base_options = []
+    instruct_options = []
+    seen = set()
+
+    # Add default base models first
+    for model_id in DEFAULT_BASE_MODELS:
+        is_cached = model_id in cached
+        short_name = model_id.replace("mlx-community/", "")
+        display = short_name if is_cached else f"{short_name} (select to download)"
+        base_options.append({"id": model_id, "display": display, "cached": is_cached})
+        seen.add(model_id)
+
+    # Add default instruct models
+    for model_id in DEFAULT_INSTRUCT_MODELS:
+        is_cached = model_id in cached
+        short_name = model_id.replace("mlx-community/", "")
+        display = short_name if is_cached else f"{short_name} (select to download)"
+        instruct_options.append({"id": model_id, "display": display, "cached": is_cached})
+        seen.add(model_id)
+
+    # Add remaining cached models
+    for model_id in sorted(cached):
+        if model_id not in seen:
+            short_name = model_id.replace("mlx-community/", "")
+            if _is_instruct_model(model_id):
+                instruct_options.append({"id": model_id, "display": short_name, "cached": True})
+            else:
+                base_options.append({"id": model_id, "display": short_name, "cached": True})
+
+    return {"base": base_options, "instruct": instruct_options}
 
 
 def create_app(model_name: str):
@@ -56,13 +108,9 @@ def create_app(model_name: str):
         raise ImportError("Flask required. Install with: pip install mlux[viewer]")
 
     app = Flask(__name__)
-    cached_models = get_cached_base_models()
 
-    # Add target base models even if not cached (for download)
-    for m in BASE_MODELS:
-        if m not in cached_models:
-            cached_models.append(m)
-    cached_models = sorted(cached_models)
+    # Get model options for dropdown (base and instruct sections)
+    model_options = get_model_options()
 
     # Model state
     state = {
@@ -251,9 +299,16 @@ def create_app(model_name: str):
     <div class="header">
         <h1>base model explorer</h1>
         <select id="model-select" onchange="swapModel()">
-            {% for m in cached_models %}
-            <option value="{{ m }}"{% if m == model_name %} selected{% endif %}>{{ m.replace('mlx-community/', '') }}</option>
+            <optgroup label="Base Models">
+            {% for m in model_options.base %}
+            <option value="{{ m.id }}"{% if m.id == model_name %} selected{% endif %}>{{ m.display }}</option>
             {% endfor %}
+            </optgroup>
+            <optgroup label="Instruct Models">
+            {% for m in model_options.instruct %}
+            <option value="{{ m.id }}"{% if m.id == model_name %} selected{% endif %}>{{ m.display }}</option>
+            {% endfor %}
+            </optgroup>
         </select>
         <span class="subtitle" id="model-info">{{ n_layers }} layers</span>
     </div>
@@ -414,7 +469,7 @@ def create_app(model_name: str):
             HTML_TEMPLATE,
             model_name=state["model_name"],
             n_layers=state["n_layers"],
-            cached_models=cached_models
+            model_options=model_options
         )
 
     @app.route('/swap_model', methods=['POST'])
