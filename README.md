@@ -27,7 +27,13 @@ Requires macOS with Apple Silicon, and Python 3.9+.
 
 ## Quick Start
 
-Illustrates how to cache model activity, modify the forward pass with hooks, and recover attention patterns. (Attention patterns have to be special-cased as most models never instantiate the attention pattern, rather using some fusion like FlashAttention, and so one cannot probe them directly.)
+To start with the interactive interfaces, run
+
+```bash
+python -m mlux
+```
+
+To start with code, the below shows how to cache model activity, modify the forward pass with hooks, and recover attention patterns. (Attention patterns have to be special-cased as most models never instantiate the attention pattern, rather using some fusion like FlashAttention, and so one cannot probe them directly.)
 
 ```python
 from mlux import HookedModel
